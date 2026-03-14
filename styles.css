@@ -84,8 +84,17 @@ body.is-looking .instruction-chip {
   pointer-events: none;
 }
 
+.hud-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  pointer-events: auto;
+}
+
 .title-block,
 .scene-status,
+.file-toolbar,
 .instruction-chip,
 .picker-shell {
   backdrop-filter: blur(18px);
@@ -110,8 +119,7 @@ body.is-looking .instruction-chip {
   text-transform: uppercase;
 }
 
-.title-block h1,
-.picker-header h2 {
+.title-block h1 {
   margin: 0;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -133,6 +141,57 @@ body.is-looking .instruction-chip {
   line-height: 1.45;
   box-shadow: var(--shadow);
   text-align: right;
+}
+
+.file-toolbar {
+  display: inline-flex;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(8, 14, 26, 0.74);
+  box-shadow: var(--shadow);
+}
+
+.file-action {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(19, 31, 53, 0.72);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
+}
+
+.file-action:hover,
+.file-action:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+  background: rgba(28, 42, 70, 0.9);
+}
+
+.file-action:disabled {
+  opacity: 0.46;
+  cursor: wait;
+}
+
+.file-action svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .instruction-chip {
@@ -178,10 +237,14 @@ body.is-looking .instruction-chip {
 
 .picker-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+}
+
+.picker-header .eyebrow {
+  margin-bottom: 0;
 }
 
 .picker-note {
@@ -249,8 +312,8 @@ body.is-looking .instruction-chip {
 .picker-card {
   flex: 0 0 min(220px, 42vw);
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: 22px;
   background:
@@ -279,7 +342,7 @@ body.is-looking .instruction-chip {
 
 .preview-shell {
   position: relative;
-  height: 144px;
+  height: 132px;
   border-radius: 18px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -312,31 +375,13 @@ body.is-looking .instruction-chip {
 }
 
 .card-meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  display: block;
 }
 
 .card-name {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-}
-
-.card-footnote {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.82rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.card-tip {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-  line-height: 1.35;
 }
 
 noscript {
@@ -351,6 +396,10 @@ noscript {
 @media (max-width: 900px) {
   .hud {
     flex-direction: column;
+  }
+
+  .hud-side {
+    align-items: flex-start;
   }
 
   .scene-status {

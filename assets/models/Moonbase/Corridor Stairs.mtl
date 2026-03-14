@@ -1,15 +1,53 @@
-# Exported from 3D Builder
-
-newmtl 09_-_Default_0
-Kd 0.500000 0.500000 0.500000
-
-newmtl 08_-_Default_0
-Kd 0.600000 0.600000 0.600000
-
-newmtl Mat_0
-Kd 1.000000 1.000000 1.000000
+# Max2Mtl Version 4.0 Mar 10th, 2001
+#
+newmtl 08_-_Default
+Ka  0.6 0.6 0.6
+Kd  0.6 0.6 0.6
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  7.6
+illum 2
+#
+newmtl 19_-_Default
+Ka  0.6 0.6 0.6
+Kd  0.6 0.6 0.6
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
 map_Kd metal.jpg
-
-newmtl Mat_1
-Kd 1.000000 1.000000 1.000000
+#
+newmtl 01_-_Default
+Ka  0.6 0.6 0.6
+Kd  0.6 0.6 0.6
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
 map_Kd metal2.jpg
+#
+newmtl 03_-_Default
+Ka  0.6 0.6 0.6
+Kd  0.6 0.6 0.6
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+#
+newmtl 09_-_Default
+Ka  0.5 0.5 0.5
+Kd  0.5 0.5 0.5
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+#
+newmtl 20_-_Default
+Ka  0.6 0.6 0.6
+Kd  0.6 0.6 0.6
+Ks  0.9 0.9 0.9
+d  0.0
+Ns  0.0
+illum 2
+#
+# EOF

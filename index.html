@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Moon Corridor Builder</title>
-  <link rel="stylesheet" href="./styles.css?v=7">
+  <link rel="stylesheet" href="./styles.css?v=9">
 </head>
 <body>
   <div class="app-shell">
@@ -15,7 +15,25 @@
         <p class="eyebrow">Lunar Assembly</p>
         <h1>Moon Corridor Builder</h1>
       </div>
-      <div id="scene-status" class="scene-status">Loading moonbase modules...</div>
+      <div class="hud-side">
+        <div class="file-toolbar" aria-label="Scene file actions">
+          <button id="save-scene" class="file-action" type="button" aria-label="Save scene" title="Save scene">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 4.5h11l3 3V19.5H5z" />
+              <path d="M8 4.5v5h8v-5" />
+              <path d="M8 19.5v-6h8v6" />
+            </svg>
+          </button>
+          <button id="load-scene" class="file-action" type="button" aria-label="Load scene" title="Load scene">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.5 8.5h6l2-2h9v11h-17z" />
+              <path d="M12 10.5v6" />
+              <path d="M9.5 14l2.5 2.5L14.5 14" />
+            </svg>
+          </button>
+        </div>
+        <div id="scene-status" class="scene-status">Loading moonbase modules...</div>
+      </div>
     </div>
 
     <div class="instruction-chip">
@@ -31,7 +49,6 @@
       <div class="picker-header">
         <div>
           <p class="eyebrow">Module Carousel</p>
-          <h2>Select a piece to place it in the scene</h2>
         </div>
         <p class="picker-note">Scroll or use the arrows to browse every OBJ model.</p>
       </div>
@@ -49,7 +66,8 @@
   </div>
 
   <noscript>This page needs JavaScript enabled to render the 3D scene.</noscript>
-  <script type="module" src="./main.js?v=17"></script>
+  <input id="scene-file-input" type="file" accept=".json,application/json" hidden>
+  <script type="module" src="./main.js?v=19"></script>
 </body>
 </html>
 

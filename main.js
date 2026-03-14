@@ -19,10 +19,17 @@ const PLAYER_SUPPORT_FORWARD_OFFSETS = [0, PLAYER_COLLISION_RADIUS * 0.92];
 const PREVIEW_IMAGE_WIDTH = 360;
 const PREVIEW_IMAGE_HEIGHT = 220;
 const PREVIEW_ROTATION_SPEED = 0.42;
-const PREVIEW_TILT = -0.16;
+const PREVIEW_TILT = 0;
 const PREVIEW_FRAME_INTERVAL = 1 / 10;
 const MODEL_MANIFEST_URL = './api/models';
+const WORLDGEN_FILE_TYPE = 'WorldGen';
+const WORLDGEN_FILE_VERSION = '1.0.0';
+const WORLDGEN_FILE_PICKER_ID = 'worldgen-scene';
+const DEFAULT_ENVIRONMENT = 'Moonbase';
 
+const saveSceneButton = document.querySelector('#save-scene');
+const loadSceneButton = document.querySelector('#load-scene');
+const sceneFileInput = document.querySelector('#scene-file-input');
 const viewport = document.querySelector('#viewport');
 const modelStrip = document.querySelector('#model-strip');
 const sceneStatus = document.querySelector('#scene-status');
@@ -73,6 +80,16 @@ const selectionState = {
   helper: null,
   item: null,
 };
+const sceneFileState = {
+  isBusy: false,
+  lastHandle: null,
+};
+const modelLibrary = {
+  byId: new Map(),
+  byPath: new Map(),
+  environment: DEFAULT_ENVIRONMENT,
+  models: [],
+};
 
 const loadingManager = new THREE.LoadingManager();
 const textureLoader = new THREE.TextureLoader(loadingManager);
@@ -110,6 +127,7 @@ async function init() {
   buildWorld();
   wireControls();
   wireCarousel();
+  wireSceneFileActions();
   startAnimationLoop();
   renderer.render(scene, camera);
 
@@ -117,10 +135,13 @@ async function init() {
     const manifest = await loadModelManifest();
     const textures = await loadTextures(manifest);
     const models = await loadModels(manifest.models, textures);
+    registerModelLibrary(models, manifest.environment);
     createPicker(models);
+    updateSceneFileActionAvailability();
     setStatus(`Choose a module below to place the first piece at the center of the scene. ${models.length} model${models.length === 1 ? '' : 's'} found.`);
   } catch (error) {
     console.error(error);
+    updateSceneFileActionAvailability();
     setStatus(`The moonbase assets could not be loaded. ${error.message || 'Check the browser console for details.'}`);
   }
 }
@@ -288,6 +309,7 @@ async function loadModels(definitions, textures) {
 
     models.push({
       ...definition,
+      relativePath: toRelativeModelPath(definition.objPath),
       template: normalizedRoot,
       size,
     });
@@ -347,16 +369,9 @@ function createPicker(models) {
 
     const cardMeta = document.createElement('div');
     cardMeta.className = 'card-meta';
-    cardMeta.innerHTML = `
-      <p class="card-name">${model.label}</p>
-      <p class="card-footnote">OBJ</p>
-    `;
+    cardMeta.innerHTML = `<p class="card-name">${model.label}</p>`;
 
-    const cardTip = document.createElement('p');
-    cardTip.className = 'card-tip';
-    cardTip.textContent = model.note;
-
-    card.append(previewShell, cardMeta, cardTip);
+    card.append(previewShell, cardMeta);
     modelStrip.append(card);
 
     card.addEventListener('click', () => {
@@ -368,23 +383,45 @@ function createPicker(models) {
 
 }
 
-function addModelToScene(model) {
-  const instance = model.template.clone(true);
-  const anchorItem = getPlacementAnchorItem();
-  if (anchorItem) {
-    instance.rotation.copy(anchorItem.group.rotation);
-    instance.position.y = anchorItem.group.position.y;
+function registerModelLibrary(models, environment) {
+  modelLibrary.models = models;
+  modelLibrary.byId.clear();
+  modelLibrary.byPath.clear();
+
+  for (const model of models) {
+    modelLibrary.byId.set(model.id, model);
+    modelLibrary.byPath.set(normalizeSceneModulePath(model.relativePath), model);
   }
 
-  const placement = calculatePlacement(instance, anchorItem);
+  modelLibrary.environment = environment || inferEnvironmentFromModels(models) || DEFAULT_ENVIRONMENT;
+}
 
-  instance.position.copy(placement.position);
+function addModelToScene(model, options = {}) {
+  const instance = model.template.clone(true);
+  let placementDirection = null;
+
+  if (options.position) {
+    instance.position.copy(options.position);
+    instance.rotation.y = options.rotationY ?? 0;
+  } else {
+    const anchorItem = getPlacementAnchorItem();
+    if (anchorItem) {
+      instance.rotation.copy(anchorItem.group.rotation);
+      instance.position.y = anchorItem.group.position.y;
+    }
+
+    const placement = calculatePlacement(instance, anchorItem);
+    instance.position.copy(placement.position);
+    placementDirection = placement.direction;
+  }
+
   scene.add(instance);
 
   const placed = {
     group: instance,
     modelId: model.id,
     label: model.label,
+    relativePath: model.relativePath,
     collisionBounds: new THREE.Box3(),
     collisionMeshes: collectCollisionMeshes(instance),
   };
@@ -395,8 +432,15 @@ function addModelToScene(model) {
   scenePickMeshes.push(...placed.collisionMeshes);
   placementState.placedItems.push(placed);
   refreshPlacedItemCollision(placed);
-  placementState.lastDirection.copy(placement.direction);
-  setSelectedItem(placed);
+  if (placementDirection) {
+    placementState.lastDirection.copy(placementDirection);
+  } else {
+    placementState.lastDirection.copy(getDirectionFromYaw(instance.rotation.y));
+  }
+
+  if (options.select !== false) {
+    setSelectedItem(placed);
+  }
 
   return placed;
 }
@@ -449,6 +493,39 @@ function resolvePlacementDirection(anchor) {
 
 function getDirectionalHalfExtent(size, direction) {
   return (Math.abs(direction.x) * size.x + Math.abs(direction.z) * size.z) * 0.5;
+}
+
+function toRelativeModelPath(path) {
+  return normalizeSceneModulePath(path);
+}
+
+function normalizeSceneModulePath(path) {
+  return String(path ?? '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/^assets\/models\//i, '')
+    .replace(/^models\/+/i, '');
+}
+
+function inferEnvironmentFromModels(models) {
+  return inferEnvironmentFromPath(models[0]?.relativePath ?? '');
+}
+
+function inferEnvironmentFromPath(path) {
+  const normalizedPath = normalizeSceneModulePath(path);
+  const [environment] = normalizedPath.split('/');
+  return environment || DEFAULT_ENVIRONMENT;
+}
+
+function getDirectionFromYaw(yawRadians) {
+  const direction = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), yawRadians);
+
+  if (Math.abs(direction.x) >= Math.abs(direction.z)) {
+    return new THREE.Vector3(Math.sign(direction.x) || 1, 0, 0);
+  }
+
+  return new THREE.Vector3(0, 0, Math.sign(direction.z) || -1);
 }
 
 function createStars() {
@@ -668,6 +745,352 @@ function wireCarousel() {
     },
     { passive: false },
   );
+}
+
+function wireSceneFileActions() {
+  updateSceneFileActionAvailability();
+
+  saveSceneButton?.addEventListener('click', () => {
+    void saveSceneToFile();
+  });
+
+  loadSceneButton?.addEventListener('click', () => {
+    void loadSceneFromFile();
+  });
+
+  sceneFileInput?.addEventListener('change', (event) => {
+    void handleSceneFileInputChange(event);
+  });
+}
+
+function updateSceneFileActionAvailability() {
+  if (saveSceneButton) {
+    saveSceneButton.disabled = sceneFileState.isBusy;
+  }
+
+  if (loadSceneButton) {
+    loadSceneButton.disabled = sceneFileState.isBusy || modelLibrary.models.length === 0;
+  }
+}
+
+function setSceneFileBusy(isBusy) {
+  sceneFileState.isBusy = isBusy;
+  updateSceneFileActionAvailability();
+}
+
+async function saveSceneToFile() {
+  if (sceneFileState.isBusy) {
+    return;
+  }
+
+  const payload = buildSceneFilePayload();
+  const serializedPayload = `${JSON.stringify(payload, null, 2)}\n`;
+
+  if (typeof window.showSaveFilePicker !== 'function') {
+    downloadScenePayload(serializedPayload);
+    return;
+  }
+
+  setSceneFileBusy(true);
+
+  try {
+    const handle = await window.showSaveFilePicker({
+      id: WORLDGEN_FILE_PICKER_ID,
+      startIn: getScenePickerStartLocation(),
+      suggestedName: buildSceneFileName(),
+      types: getSceneFilePickerTypes(),
+    });
+    const writable = await handle.createWritable();
+    await writable.write(serializedPayload);
+    await writable.close();
+
+    sceneFileState.lastHandle = handle;
+
+    const count = placementState.placedItems.length;
+    setStatus(`Scene saved to ${handle.name}. ${count} module${count === 1 ? '' : 's'} written.`);
+  } catch (error) {
+    if (isPickerAbortError(error)) {
+      return;
+    }
+
+    console.error(error);
+    setStatus(`Scene save failed. ${error.message || 'Check the browser console for details.'}`);
+  } finally {
+    setSceneFileBusy(false);
+  }
+}
+
+async function loadSceneFromFile() {
+  if (sceneFileState.isBusy) {
+    return;
+  }
+
+  if (modelLibrary.models.length === 0) {
+    setStatus('The module library is still loading. Wait a moment, then try loading the scene again.');
+    return;
+  }
+
+  if (typeof window.showOpenFilePicker !== 'function') {
+    if (sceneFileInput) {
+      sceneFileInput.value = '';
+      sceneFileInput.click();
+    }
+    return;
+  }
+
+  setSceneFileBusy(true);
+
+  try {
+    const [handle] = await window.showOpenFilePicker({
+      id: WORLDGEN_FILE_PICKER_ID,
+      startIn: getScenePickerStartLocation(),
+      multiple: false,
+      types: getSceneFilePickerTypes(),
+    });
+    const file = await handle.getFile();
+    const fileText = await file.text();
+
+    await loadSceneFromText(fileText, handle.name);
+    sceneFileState.lastHandle = handle;
+  } catch (error) {
+    if (isPickerAbortError(error)) {
+      return;
+    }
+
+    console.error(error);
+    setStatus(`Scene load failed. ${error.message || 'Check the browser console for details.'}`);
+  } finally {
+    setSceneFileBusy(false);
+  }
+}
+
+async function handleSceneFileInputChange(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+
+  if (!file) {
+    return;
+  }
+
+  setSceneFileBusy(true);
+
+  try {
+    const fileText = await file.text();
+    await loadSceneFromText(fileText, file.name);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Scene load failed. ${error.message || 'Check the browser console for details.'}`);
+  } finally {
+    setSceneFileBusy(false);
+  }
+}
+
+function buildSceneFilePayload() {
+  return {
+    FileType: WORLDGEN_FILE_TYPE,
+    Version: WORLDGEN_FILE_VERSION,
+    Environment: modelLibrary.environment || DEFAULT_ENVIRONMENT,
+    Scene: placementState.placedItems.map((item) => ({
+      Object: 'Module',
+      Path: item.relativePath,
+      Position: formatScenePosition(item.group.position),
+      Rotation: formatSceneRotation(item.group.rotation.y),
+    })),
+  };
+}
+
+function downloadScenePayload(serializedPayload) {
+  const blob = new Blob([serializedPayload], { type: 'application/json' });
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = buildSceneFileName();
+  link.style.display = 'none';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+
+  const count = placementState.placedItems.length;
+  setStatus(`Scene downloaded as ${link.download}. ${count} module${count === 1 ? '' : 's'} written.`);
+}
+
+function buildSceneFileName() {
+  const environment = (modelLibrary.environment || DEFAULT_ENVIRONMENT)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return `${environment || 'worldgen'}-scene.json`;
+}
+
+function getScenePickerStartLocation() {
+  return sceneFileState.lastHandle ?? 'documents';
+}
+
+function getSceneFilePickerTypes() {
+  return [
+    {
+      description: 'WorldGen scene JSON',
+      accept: {
+        'application/json': ['.json'],
+      },
+    },
+  ];
+}
+
+function isPickerAbortError(error) {
+  return error?.name === 'AbortError';
+}
+
+async function loadSceneFromText(fileText, sourceLabel) {
+  const parsedScene = parseSceneFilePayload(fileText);
+  const resolvedEntries = parsedScene.scene.map((entry, index) => {
+    const resolvedPath = normalizeSceneModulePath(resolveScenePath(entry.path, parsedScene.environment));
+    const model = modelLibrary.byPath.get(resolvedPath);
+
+    if (!model) {
+      throw new Error(`Module ${index + 1} could not be found: ${resolvedPath}`);
+    }
+
+    return {
+      model,
+      position: entry.position,
+      rotationY: THREE.MathUtils.degToRad(entry.rotationDegrees),
+    };
+  });
+
+  clearPlacedItems();
+
+  let lastPlaced = null;
+  for (const entry of resolvedEntries) {
+    lastPlaced = addModelToScene(entry.model, {
+      position: entry.position,
+      rotationY: entry.rotationY,
+      select: false,
+    });
+  }
+
+  setSelectedItem(lastPlaced);
+  placementState.lastDirection.copy(lastPlaced ? getDirectionFromYaw(lastPlaced.group.rotation.y) : new THREE.Vector3(0, 0, -1));
+
+  if (lastPlaced) {
+    const count = placementState.placedItems.length;
+    setStatus(getSelectedItemStatus(lastPlaced, `Scene loaded from ${sourceLabel}. ${count} module${count === 1 ? '' : 's'} restored.`));
+    return;
+  }
+
+  setStatus(`Scene loaded from ${sourceLabel}. Scene is empty.`);
+}
+
+function parseSceneFilePayload(fileText) {
+  let payload;
+  try {
+    payload = JSON.parse(fileText);
+  } catch (error) {
+    throw new Error('The selected file is not valid JSON.');
+  }
+
+  const header = payload && typeof payload.Header === 'object' ? payload.Header : payload;
+  if (!header || header.FileType !== WORLDGEN_FILE_TYPE) {
+    throw new Error(`The selected file is not a ${WORLDGEN_FILE_TYPE} scene.`);
+  }
+
+  const version = String(header.Version ?? '').trim();
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new Error('The scene file version must use major.minor.debug format.');
+  }
+
+  const environment = String(header.Environment ?? payload.Environment ?? '').trim() || DEFAULT_ENVIRONMENT;
+  const rawScene =
+    Array.isArray(payload.Scene) ? payload.Scene : Array.isArray(payload.Scene?.Objects) ? payload.Scene.Objects : null;
+
+  if (!rawScene) {
+    throw new Error('The scene file does not contain a Scene array.');
+  }
+
+  return {
+    environment,
+    scene: rawScene.map((entry, index) => parseSceneEntry(entry, index)),
+    version,
+  };
+}
+
+function parseSceneEntry(entry, index) {
+  if (!entry || typeof entry !== 'object') {
+    throw new Error(`Scene entry ${index + 1} is invalid.`);
+  }
+
+  const objectType = String(entry.Object ?? 'Module').trim();
+  if (objectType !== 'Module') {
+    throw new Error(`Scene entry ${index + 1} uses unsupported object type "${objectType}".`);
+  }
+
+  return {
+    path: String(entry.Path ?? '').trim(),
+    position: parseScenePosition(entry.Position, index),
+    rotationDegrees: parseSceneRotation(entry.Rotation, index),
+  };
+}
+
+function resolveScenePath(path, environment) {
+  const normalizedPath = normalizeSceneModulePath(path);
+  if (!normalizedPath) {
+    throw new Error('Every scene module must include a Path value.');
+  }
+
+  if (normalizedPath.includes('/')) {
+    return normalizedPath;
+  }
+
+  return `${environment}/${normalizedPath}`;
+}
+
+function parseScenePosition(value, index) {
+  if (typeof value === 'string') {
+    const parts = value.split(',').map((part) => Number.parseFloat(part.trim()));
+    if (parts.length === 3 && parts.every(Number.isFinite)) {
+      return new THREE.Vector3(parts[0], parts[1], parts[2]);
+    }
+  }
+
+  if (Array.isArray(value) && value.length === 3 && value.every((part) => Number.isFinite(Number(part)))) {
+    return new THREE.Vector3(Number(value[0]), Number(value[1]), Number(value[2]));
+  }
+
+  if (value && typeof value === 'object') {
+    const x = Number(value.x);
+    const y = Number(value.y);
+    const z = Number(value.z);
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+      return new THREE.Vector3(x, y, z);
+    }
+  }
+
+  throw new Error(`Scene entry ${index + 1} has an invalid Position value.`);
+}
+
+function parseSceneRotation(value, index) {
+  const rotation = Number.parseFloat(String(value ?? '0').trim());
+  if (!Number.isFinite(rotation)) {
+    throw new Error(`Scene entry ${index + 1} has an invalid Rotation value.`);
+  }
+
+  return rotation;
+}
+
+function formatScenePosition(position) {
+  return [position.x, position.y, position.z].map(formatSceneNumber).join(',');
+}
+
+function formatSceneRotation(rotationY) {
+  const degrees = THREE.MathUtils.euclideanModulo(THREE.MathUtils.radToDeg(rotationY), 360);
+  return formatSceneNumber(degrees);
+}
+
+function formatSceneNumber(value) {
+  const roundedValue = Math.abs(value) < 0.0005 ? 0 : Number(value.toFixed(3));
+  return String(Object.is(roundedValue, -0) ? 0 : roundedValue);
 }
 
 function animate() {
@@ -1001,16 +1424,7 @@ function deleteSelectedItem() {
   }
 
   placementState.placedItems.splice(removedIndex, 1);
-
-  for (const mesh of item.collisionMeshes) {
-    const pickIndex = scenePickMeshes.indexOf(mesh);
-    if (pickIndex !== -1) {
-      scenePickMeshes.splice(pickIndex, 1);
-    }
-    mesh.userData.placedItem = null;
-  }
-
-  scene.remove(item.group);
+  detachPlacedItem(item);
 
   const nextSelection =
     placementState.placedItems[removedIndex] ??
@@ -1025,6 +1439,29 @@ function deleteSelectedItem() {
   }
 
   setStatus(`${item.label} deleted. Scene is empty. Choose a module below to place the next piece.`);
+}
+
+function clearPlacedItems() {
+  setSelectedItem(null);
+
+  for (const item of placementState.placedItems) {
+    detachPlacedItem(item);
+  }
+
+  placementState.placedItems.length = 0;
+  placementState.lastDirection.set(0, 0, -1);
+}
+
+function detachPlacedItem(item) {
+  for (const mesh of item.collisionMeshes) {
+    const pickIndex = scenePickMeshes.indexOf(mesh);
+    if (pickIndex !== -1) {
+      scenePickMeshes.splice(pickIndex, 1);
+    }
+    mesh.userData.placedItem = null;
+  }
+
+  scene.remove(item.group);
 }
 
 function getSelectedItemStatus(item, detail = '') {
