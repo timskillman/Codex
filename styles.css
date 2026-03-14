@@ -35,6 +35,10 @@ body.is-looking #viewport canvas {
   cursor: grabbing;
 }
 
+body.is-dialog-open {
+  overflow: hidden;
+}
+
 body.is-looking .instruction-chip {
   opacity: 0.68;
 }
@@ -192,6 +196,96 @@ body.is-looking .instruction-chip {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
+}
+
+.scene-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.scene-confirm[hidden] {
+  display: none;
+}
+
+.scene-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 5, 12, 0.68);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.scene-confirm-panel {
+  position: relative;
+  width: min(460px, calc(100vw - 32px));
+  padding: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(17, 25, 41, 0.96), rgba(8, 14, 26, 0.94)),
+    radial-gradient(circle at top left, rgba(134, 215, 255, 0.1), transparent 42%);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.46);
+}
+
+.scene-confirm-panel h2 {
+  margin: 0 0 10px;
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+  letter-spacing: 0.02em;
+}
+
+.scene-confirm-panel .eyebrow {
+  margin-bottom: 8px;
+}
+
+.scene-confirm-panel p:last-of-type {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.scene-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.scene-confirm-button {
+  min-width: 112px;
+  padding: 11px 15px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(19, 31, 53, 0.72);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.scene-confirm-button:hover,
+.scene-confirm-button:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+  background: rgba(28, 42, 70, 0.9);
+}
+
+.scene-confirm-button.is-primary {
+  border-color: rgba(255, 211, 111, 0.42);
+  background: linear-gradient(180deg, rgba(107, 78, 23, 0.88), rgba(72, 51, 14, 0.92));
+}
+
+.scene-confirm-button.is-primary:hover,
+.scene-confirm-button.is-primary:focus-visible {
+  border-color: rgba(255, 223, 151, 0.72);
+  background: linear-gradient(180deg, rgba(132, 94, 27, 0.95), rgba(87, 62, 16, 0.96));
 }
 
 .instruction-chip {
@@ -443,6 +537,23 @@ noscript {
 
   .picker-card {
     flex-basis: min(200px, 68vw);
+  }
+
+  .scene-confirm {
+    padding: 16px;
+  }
+
+  .scene-confirm-panel {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .scene-confirm-actions {
+    flex-direction: column;
+  }
+
+  .scene-confirm-button {
+    width: 100%;
   }
 
 }

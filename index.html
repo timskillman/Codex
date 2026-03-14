@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Moon Corridor Builder</title>
-  <link rel="stylesheet" href="./styles.css?v=9">
+  <link rel="stylesheet" href="./styles.css?v=10">
 </head>
 <body>
   <div class="app-shell">
@@ -17,6 +17,14 @@
       </div>
       <div class="hud-side">
         <div class="file-toolbar" aria-label="Scene file actions">
+          <button id="new-scene" class="file-action" type="button" aria-label="New scene" title="New scene">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 3.5h7l4 4v13H7z" />
+              <path d="M14 3.5v4h4" />
+              <path d="M12.5 11v6" />
+              <path d="M9.5 14h6" />
+            </svg>
+          </button>
           <button id="save-scene" class="file-action" type="button" aria-label="Save scene" title="Save scene">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M5 4.5h11l3 3V19.5H5z" />
@@ -65,9 +73,23 @@
     </section>
   </div>
 
+  <div id="scene-confirm" class="scene-confirm" hidden aria-hidden="true">
+    <div class="scene-confirm-backdrop" data-dialog-action="cancel"></div>
+    <div class="scene-confirm-panel" role="dialog" aria-modal="true" aria-labelledby="scene-confirm-title" aria-describedby="scene-confirm-message">
+      <p class="eyebrow">Unsaved Changes</p>
+      <h2 id="scene-confirm-title">Save changes before continuing?</h2>
+      <p id="scene-confirm-message">Your scene has changed. Do you want to save it before continuing?</p>
+      <div class="scene-confirm-actions">
+        <button id="scene-confirm-save" class="scene-confirm-button is-primary" type="button">Save First</button>
+        <button id="scene-confirm-discard" class="scene-confirm-button" type="button">Don't Save</button>
+        <button id="scene-confirm-cancel" class="scene-confirm-button" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <noscript>This page needs JavaScript enabled to render the 3D scene.</noscript>
   <input id="scene-file-input" type="file" accept=".json,application/json" hidden>
-  <script type="module" src="./main.js?v=19"></script>
+  <script type="module" src="./main.js?v=20"></script>
 </body>
 </html>
 

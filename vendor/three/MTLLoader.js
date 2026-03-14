@@ -581,6 +581,8 @@ class MaterialCreator {
 		if ( loader.setCrossOrigin ) loader.setCrossOrigin( this.crossOrigin );
 
 		const texture = loader.load( url, onLoad, onProgress, onError );
+		texture.userData = texture.userData || {};
+		texture.userData.worldgenSourceUrl = url;
 
 		if ( mapping !== undefined ) texture.mapping = mapping;
 
