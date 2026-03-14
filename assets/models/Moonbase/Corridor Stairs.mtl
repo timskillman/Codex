@@ -1,0 +1,15 @@
+# Exported from 3D Builder
+
+newmtl 09_-_Default_0
+Kd 0.500000 0.500000 0.500000
+
+newmtl 08_-_Default_0
+Kd 0.600000 0.600000 0.600000
+
+newmtl Mat_0
+Kd 1.000000 1.000000 1.000000
+map_Kd metal.jpg
+
+newmtl Mat_1
+Kd 1.000000 1.000000 1.000000
+map_Kd metal2.jpg

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Moon Corridor Builder</title>
+  <link rel="stylesheet" href="./styles.css?v=7">
+</head>
+<body>
+  <div class="app-shell">
+    <div id="viewport" aria-label="3D moonbase scene"></div>
+
+    <div class="hud">
+      <div class="title-block">
+        <p class="eyebrow">Lunar Assembly</p>
+        <h1>Moon Corridor Builder</h1>
+      </div>
+      <div id="scene-status" class="scene-status">Loading moonbase modules...</div>
+    </div>
+
+    <div class="instruction-chip">
+      <span>WASD to move</span>
+      <span>Left click select</span>
+      <span>Right drag look</span>
+      <span>Q/E rotate selected</span>
+      <span>R/F raise or lower selected</span>
+      <span>Delete removes selected</span>
+    </div>
+
+    <section class="picker-shell" aria-label="Moonbase model picker">
+      <div class="picker-header">
+        <div>
+          <p class="eyebrow">Module Carousel</p>
+          <h2>Select a piece to place it in the scene</h2>
+        </div>
+        <p class="picker-note">Scroll or use the arrows to browse every OBJ model.</p>
+      </div>
+
+      <div class="picker-frame">
+        <button class="scroll-control" type="button" data-direction="-1" aria-label="Scroll models left">
+          &#8592;
+        </button>
+        <div id="model-strip" class="model-strip" role="list"></div>
+        <button class="scroll-control" type="button" data-direction="1" aria-label="Scroll models right">
+          &#8594;
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <noscript>This page needs JavaScript enabled to render the 3D scene.</noscript>
+  <script type="module" src="./main.js?v=17"></script>
+</body>
+</html>
+
+
