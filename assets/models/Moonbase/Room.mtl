@@ -1,23 +1,5 @@
 # Max2Mtl Version 4.0 Mar 10th, 2001
 #
-newmtl WhiteLight
-Ka  1.0 1.0 1.0
-Kd  1.0 1.0 1.0
-Ke  1.0 1.0 1.0
-Ks  0.9 0.9 0.9
-d  1.0
-Ns  0.0
-illum 2
-#
-newmtl 01_-_Default
-Ka  0.6 0.6 0.6
-Kd  0.6 0.6 0.6
-Ks  0.9 0.9 0.9
-d  1.0
-Ns  0.0
-illum 2
-map_Kd metal2.jpg
-#
 newmtl RedLight
 Ka  1.0 0.0 0.0
 Kd  1.0 0.0 0.0
@@ -52,6 +34,15 @@ d  1.0
 Ns  0.0
 illum 2
 #
+newmtl 01_-_Default
+Ka  0.6 0.6 0.6
+Kd  0.6 0.6 0.6
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+map_Kd metal2.jpg
+#
 newmtl 03_-_Default
 Ka  0.6 0.6 0.6
 Kd  0.6 0.6 0.6
@@ -66,6 +57,33 @@ Kd  1.0 1.0 1.0
 Ks  0.0 0.0 0.0
 d  1.0
 Ns  8.8
+illum 2
+#
+newmtl 15_-_Default
+Ka  0.3 0.3 0.3
+Kd  0.3 0.3 0.3
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+#
+newmtl 24_-_Default
+Ka  1.0 1.0 1.0
+Kd  1.0 1.0 1.0
+Ke  1.0 1.0 1.0
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+map_Kd console.jpg
+#
+newmtl WhiteLight
+Ka  1.0 1.0 1.0
+Kd  1.0 1.0 1.0
+Ke  1.0 1.0 1.0
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
 illum 2
 #
 # EOF

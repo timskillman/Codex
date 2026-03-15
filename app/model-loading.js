@@ -127,8 +127,9 @@ function applyMaterialSettings(renderer, material) {
     return material;
   }
 
-  if (shouldUseGifSelfLitMaterial(material)) {
-    return getGifSelfLitMaterial(renderer, material);
+  const selfLitMode = getTexturedSelfLitMode(material);
+  if (selfLitMode) {
+    return getTexturedSelfLitMaterial(renderer, material, selfLitMode);
   }
 
   material.side = THREE.DoubleSide;
@@ -137,43 +138,72 @@ function applyMaterialSettings(renderer, material) {
   return material;
 }
 
-function shouldUseGifSelfLitMaterial(material) {
-  if (material.userData?.worldgenIsGifSelfLitMaterial) {
+function getTexturedSelfLitMode(material) {
+  if (material.userData?.worldgenIsTexturedSelfLitMaterial) {
+    return null;
+  }
+
+  if (isGifTexture(getPrimarySelfLitTexture(material))) {
+    return 'gif';
+  }
+
+  if (shouldUseFullKeSelfLitMaterial(material)) {
+    return 'full-ke';
+  }
+
+  return null;
+}
+
+function shouldUseFullKeSelfLitMaterial(material) {
+  return Boolean(getPrimarySelfLitTexture(material) && isFullyEmissiveColor(material.emissive));
+}
+
+function isFullyEmissiveColor(color) {
+  if (!color?.isColor) {
     return false;
   }
 
-  return Boolean(getGifSelfLitTexture(material));
+  return color.r >= 0.99 && color.g >= 0.99 && color.b >= 0.99;
 }
 
-function getGifSelfLitMaterial(renderer, sourceMaterial) {
-  if (sourceMaterial.userData?.worldgenGifSelfLitMaterial) {
-    return sourceMaterial.userData.worldgenGifSelfLitMaterial;
+function getTexturedSelfLitMaterial(renderer, sourceMaterial, mode) {
+  const cacheKey = mode === 'gif' ? 'worldgenGifSelfLitMaterial' : 'worldgenFullKeSelfLitMaterial';
+  if (sourceMaterial.userData?.[cacheKey]) {
+    return sourceMaterial.userData[cacheKey];
   }
 
-  const map = getGifSelfLitTexture(sourceMaterial);
+  const map = getPrimarySelfLitTexture(sourceMaterial);
   if (map) {
     prepareTexture(renderer, map);
+  }
+  if (sourceMaterial.alphaMap) {
+    prepareTexture(renderer, sourceMaterial.alphaMap);
   }
 
   const opacity = Number.isFinite(sourceMaterial.opacity) ? sourceMaterial.opacity : 1;
   const material = new THREE.MeshBasicMaterial({
+    alphaMap: sourceMaterial.alphaMap ?? null,
+    alphaTest: sourceMaterial.alphaTest ?? 0,
     map,
     color: 0xffffff,
     name: sourceMaterial.name,
     opacity,
     side: sourceMaterial.side ?? THREE.DoubleSide,
-    transparent: opacity < 1,
-    depthWrite: opacity >= 1,
+    transparent: Boolean(sourceMaterial.transparent || sourceMaterial.alphaMap || opacity < 1),
+    depthWrite: opacity >= 1 && !sourceMaterial.alphaMap,
     toneMapped: false,
   });
 
-  material.userData.worldgenIsGifSelfLitMaterial = true;
+  material.userData.worldgenIsTexturedSelfLitMaterial = true;
+  material.userData.worldgenSelfLitMode = mode;
   material.userData.worldgenSourceMaterial = sourceMaterial;
-  ignoreDiffuseMapAlpha(material);
+  if (mode === 'gif') {
+    ignoreDiffuseMapAlpha(material);
+  }
   material.needsUpdate = true;
 
   sourceMaterial.userData = sourceMaterial.userData || {};
-  sourceMaterial.userData.worldgenGifSelfLitMaterial = material;
+  sourceMaterial.userData[cacheKey] = material;
 
   return material;
 }
@@ -196,16 +226,8 @@ function prepareKnownMaterialTextures(renderer, material) {
   }
 }
 
-function getGifSelfLitTexture(material) {
-  const candidateTextures = [material.map, material.emissiveMap];
-
-  for (const texture of candidateTextures) {
-    if (isGifTexture(texture)) {
-      return texture;
-    }
-  }
-
-  return null;
+function getPrimarySelfLitTexture(material) {
+  return material.map ?? material.emissiveMap ?? null;
 }
 
 function ignoreDiffuseMapAlpha(material) {
