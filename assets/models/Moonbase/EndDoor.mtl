@@ -1,14 +1,5 @@
 # Max2Mtl Version 4.0 Mar 10th, 2001
 #
-newmtl WhiteLight
-Ka  1.0 1.0 1.0
-Kd  1.0 1.0 1.0
-Ke  1.0 1.0 1.0
-Ks  0.9 0.9 0.9
-d  1.0
-Ns  0.0
-illum 2
-#
 newmtl 03_-_Default
 Ka  0.6 0.6 0.6
 Kd  0.6 0.6 0.6
@@ -34,12 +25,11 @@ d  1.0
 Ns  7.6
 illum 2
 #
-newmtl RedLight
-Ka  1.0 0.0 0.0
-Kd  1.0 0.0 0.0
-Ke  1.0 0.0 0.0
+newmtl 20_-_Default
+Ka  0.6 0.6 0.6
+Kd  0.6 0.6 0.6
 Ks  0.9 0.9 0.9
-d  1.0
+d  0.0
 Ns  0.0
 illum 2
 #
@@ -59,14 +49,6 @@ d  1.0
 Ns  8.8
 illum 2
 #
-newmtl 20_-_Default
-Ka  0.6 0.6 0.6
-Kd  0.6 0.6 0.6
-Ks  0.9 0.9 0.9
-d  0.0
-Ns  0.0
-illum 2
-#
 newmtl 19_-_Default
 Ka  0.6 0.6 0.6
 Kd  0.6 0.6 0.6
@@ -75,5 +57,41 @@ d  1.0
 Ns  0.0
 illum 2
 map_Kd metal.jpg
+#
+newmtl 04_-_Default
+Ka  0.6 0.6 0.6
+Kd  0.6 0.6 0.6
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+map_Kd -s 7.0 7.0 1.0 dchevrons.jpg
+#
+newmtl 15_-_Default
+Ka  0.3 0.3 0.3
+Kd  0.3 0.3 0.3
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+#
+newmtl WhiteLight
+Ka  1.0 1.0 1.0
+Kd  1.0 1.0 1.0
+Ke  1.0 1.0 1.0
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+#
+newmtl MonitorLight
+Ka  1.0 1.0 1.0
+Kd  1.0 1.0 1.0
+Ke  1.0 1.0 1.0
+Ks  0.9 0.9 0.9
+d  1.0
+Ns  0.0
+illum 2
+map_Kd MedMon1.jpg
 #
 # EOF
