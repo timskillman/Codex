@@ -132,9 +132,7 @@ function applyMaterialSettings(renderer, material) {
   }
 
   material.side = THREE.DoubleSide;
-  if ('map' in material && material.map) {
-    prepareTexture(renderer, material.map);
-  }
+  prepareKnownMaterialTextures(renderer, material);
   material.needsUpdate = true;
   return material;
 }
@@ -144,7 +142,7 @@ function shouldUseGifSelfLitMaterial(material) {
     return false;
   }
 
-  return isGifTexture(material.map);
+  return Boolean(getGifSelfLitTexture(material));
 }
 
 function getGifSelfLitMaterial(renderer, sourceMaterial) {
@@ -152,7 +150,7 @@ function getGifSelfLitMaterial(renderer, sourceMaterial) {
     return sourceMaterial.userData.worldgenGifSelfLitMaterial;
   }
 
-  const map = sourceMaterial.map ?? null;
+  const map = getGifSelfLitTexture(sourceMaterial);
   if (map) {
     prepareTexture(renderer, map);
   }
@@ -178,6 +176,36 @@ function getGifSelfLitMaterial(renderer, sourceMaterial) {
   sourceMaterial.userData.worldgenGifSelfLitMaterial = material;
 
   return material;
+}
+
+function prepareKnownMaterialTextures(renderer, material) {
+  const textureKeys = [
+    'map',
+    'emissiveMap',
+    'specularMap',
+    'normalMap',
+    'bumpMap',
+    'displacementMap',
+    'alphaMap',
+  ];
+
+  for (const key of textureKeys) {
+    if (material[key]) {
+      prepareTexture(renderer, material[key]);
+    }
+  }
+}
+
+function getGifSelfLitTexture(material) {
+  const candidateTextures = [material.map, material.emissiveMap];
+
+  for (const texture of candidateTextures) {
+    if (isGifTexture(texture)) {
+      return texture;
+    }
+  }
+
+  return null;
 }
 
 function ignoreDiffuseMapAlpha(material) {
