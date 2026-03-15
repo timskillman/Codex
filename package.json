@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "start": "powershell -NoProfile -ExecutionPolicy Bypass -File ./serve.ps1 -Port 8000"
+    "start": "powershell -NoProfile -ExecutionPolicy Bypass -File ./serve.ps1 -Port 8000 -BindAddress 192.168.0.7"
   },
   "dependencies": {
     "three": "^0.183.2"

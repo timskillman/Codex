@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Moon Corridor Builder</title>
-  <link rel="stylesheet" href="./styles.css?v=10">
+  <link rel="stylesheet" href="./styles.css?v=15">
 </head>
 <body>
   <div class="app-shell">
@@ -14,6 +14,38 @@
       <div class="title-block">
         <p class="eyebrow">Lunar Assembly</p>
         <h1>Moon Corridor Builder</h1>
+        <div class="mobile-selection-toolbar" aria-label="Selected module controls">
+          <button id="mobile-rotate-left" class="mobile-selection-action" type="button" aria-label="Rotate module left" title="Rotate left">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9.5 6.5 4.5 12l5 5.5" />
+              <path d="M5 12h11.5" />
+            </svg>
+          </button>
+          <button id="mobile-rotate-right" class="mobile-selection-action" type="button" aria-label="Rotate module right" title="Rotate right">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M14.5 6.5 19.5 12l-5 5.5" />
+              <path d="M19 12H7.5" />
+            </svg>
+          </button>
+          <button id="mobile-move-up" class="mobile-selection-action" type="button" aria-label="Raise module" title="Raise module">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.5 14.5 12 9.5l5.5 5" />
+              <path d="M12 10v10" />
+            </svg>
+          </button>
+          <button id="mobile-move-down" class="mobile-selection-action" type="button" aria-label="Lower module" title="Lower module">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.5 9.5 12 14.5l5.5-5" />
+              <path d="M12 14V4" />
+            </svg>
+          </button>
+          <button id="mobile-delete-selection" class="mobile-selection-action is-delete" type="button" aria-label="Delete selected module" title="Delete selected module">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7 17 17" />
+              <path d="M17 7 7 17" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="hud-side">
         <div class="file-toolbar" aria-label="Scene file actions">
@@ -37,6 +69,22 @@
               <path d="M3.5 8.5h6l2-2h9v11h-17z" />
               <path d="M12 10.5v6" />
               <path d="M9.5 14l2.5 2.5L14.5 14" />
+            </svg>
+          </button>
+          <button id="toggle-fullscreen" class="file-action" type="button" aria-label="Enter fullscreen" title="Enter fullscreen">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <g class="icon-enter">
+                <path d="M8 4.5H4.5V8" />
+                <path d="M16 4.5h3.5V8" />
+                <path d="M8 19.5H4.5V16" />
+                <path d="M16 19.5h3.5V16" />
+              </g>
+              <g class="icon-exit">
+                <path d="M9 8H5.5V4.5" />
+                <path d="M15 8h3.5V4.5" />
+                <path d="M9 16H5.5v3.5" />
+                <path d="M15 16h3.5v3.5" />
+              </g>
             </svg>
           </button>
         </div>
@@ -71,6 +119,24 @@
         </button>
       </div>
     </section>
+
+    <div class="mobile-controls" aria-label="Mobile scene controls">
+      <div class="mobile-move-controls">
+        <button id="mobile-move-forward" class="mobile-control-button mobile-move-button" type="button" aria-label="Move forward">
+          <span>Fwd</span>
+        </button>
+        <button id="mobile-move-back" class="mobile-control-button mobile-move-button" type="button" aria-label="Move backward">
+          <span>Back</span>
+        </button>
+      </div>
+
+      <div class="mobile-look-controls">
+        <div id="mobile-look-pad" class="mobile-look-pad" aria-label="Look around control">
+          <div class="mobile-look-pad-ring"></div>
+          <div id="mobile-look-thumb" class="mobile-look-thumb"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="scene-confirm" class="scene-confirm" hidden aria-hidden="true">
@@ -89,7 +155,7 @@
 
   <noscript>This page needs JavaScript enabled to render the 3D scene.</noscript>
   <input id="scene-file-input" type="file" accept=".json,application/json" hidden>
-  <script type="module" src="./main.js?v=20"></script>
+  <script type="module" src="./main.js?v=22"></script>
 </body>
 </html>
 

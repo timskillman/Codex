@@ -21,6 +21,8 @@ const ATTACHMENT_GAP = 0;
 const EYE_HEIGHT = 1.72;
 const MOVE_SPEED = 7.6;
 const LOOK_DRAG_SENSITIVITY = 0.0024;
+const MOBILE_LOOK_SPEED = 2.8;
+const MOBILE_LOOK_PAD_RADIUS_RATIO = 0.34;
 const PLAYER_MAX_STEP_HEIGHT = EYE_HEIGHT * 0.5;
 const PLAYER_COLLISION_RADIUS = 0.28;
 const PLAYER_COLLISION_CLEARANCE = 0.03;
@@ -47,6 +49,7 @@ const START_CAMERA_YAW = 0;
 const newSceneButton = document.querySelector('#new-scene');
 const saveSceneButton = document.querySelector('#save-scene');
 const loadSceneButton = document.querySelector('#load-scene');
+const fullscreenButton = document.querySelector('#toggle-fullscreen');
 const sceneFileInput = document.querySelector('#scene-file-input');
 const sceneConfirm = document.querySelector('#scene-confirm');
 const sceneConfirmTitle = document.querySelector('#scene-confirm-title');
@@ -57,6 +60,15 @@ const sceneConfirmCancelButton = document.querySelector('#scene-confirm-cancel')
 const viewport = document.querySelector('#viewport');
 const modelStrip = document.querySelector('#model-strip');
 const sceneStatus = document.querySelector('#scene-status');
+const mobileRotateLeftButton = document.querySelector('#mobile-rotate-left');
+const mobileRotateRightButton = document.querySelector('#mobile-rotate-right');
+const mobileMoveUpButton = document.querySelector('#mobile-move-up');
+const mobileMoveDownButton = document.querySelector('#mobile-move-down');
+const mobileDeleteSelectionButton = document.querySelector('#mobile-delete-selection');
+const mobileMoveForwardButton = document.querySelector('#mobile-move-forward');
+const mobileMoveBackButton = document.querySelector('#mobile-move-back');
+const mobileLookPad = document.querySelector('#mobile-look-pad');
+const mobileLookThumb = document.querySelector('#mobile-look-thumb');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -93,6 +105,16 @@ const lookState = {
   pitch: START_CAMERA_PITCH,
   pointerId: null,
   yaw: START_CAMERA_YAW,
+};
+const mobileLookState = {
+  inputX: 0,
+  inputY: 0,
+  isActive: false,
+  pointerId: null,
+};
+const mobileMoveState = {
+  backPointerId: null,
+  forwardPointerId: null,
 };
 const scenePointer = new THREE.Vector2();
 const scenePickRaycaster = new THREE.Raycaster();
@@ -165,6 +187,7 @@ async function init() {
   groundMesh = world.groundMesh;
   sunSystem = world.sunSystem;
   wireControls();
+  wireMobileControls();
   wireCarousel();
   wireSceneFileActions();
   startAnimationLoop();
@@ -404,6 +427,241 @@ function wireControls() {
   window.addEventListener('resize', handleResize);
 }
 
+function wireMobileControls() {
+  wireMobileMoveButton(mobileMoveForwardButton, 'forward', 'forwardPointerId');
+  wireMobileMoveButton(mobileMoveBackButton, 'back', 'backPointerId');
+  wireMobileSelectionActions();
+
+  mobileLookPad?.addEventListener('pointerdown', handleMobileLookPointerDown);
+  mobileLookPad?.addEventListener('pointermove', handleMobileLookPointerMove);
+  mobileLookPad?.addEventListener('pointerup', handleMobileLookPointerUp);
+  mobileLookPad?.addEventListener('pointercancel', handleMobileLookPointerUp);
+  mobileLookPad?.addEventListener('lostpointercapture', handleMobileLookPointerUp);
+
+  fullscreenButton?.addEventListener('click', () => {
+    void toggleFullscreen();
+  });
+
+  document.addEventListener('fullscreenchange', updateFullscreenButtonState);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenButtonState);
+  updateFullscreenButtonState();
+  updateMobileSelectionActionAvailability();
+}
+
+function wireMobileSelectionActions() {
+  wireMobileSelectionAction(mobileRotateLeftButton, () => rotateSelectedItem(Math.PI / 4));
+  wireMobileSelectionAction(mobileRotateRightButton, () => rotateSelectedItem(-Math.PI / 4));
+  wireMobileSelectionAction(mobileMoveUpButton, () => moveSelectedItemVertically(1));
+  wireMobileSelectionAction(mobileMoveDownButton, () => moveSelectedItemVertically(-1));
+  wireMobileSelectionAction(mobileDeleteSelectionButton, () => deleteSelectedItem());
+}
+
+function wireMobileSelectionAction(button, action) {
+  if (!button) {
+    return;
+  }
+
+  button.addEventListener('click', () => {
+    if (!selectionState.item || button.disabled) {
+      return;
+    }
+
+    action();
+  });
+}
+
+function updateMobileSelectionActionAvailability() {
+  const hasSelection = Boolean(selectionState.item);
+  [
+    mobileRotateLeftButton,
+    mobileRotateRightButton,
+    mobileMoveUpButton,
+    mobileMoveDownButton,
+    mobileDeleteSelectionButton,
+  ].forEach((button) => {
+    if (button) {
+      button.disabled = !hasSelection;
+    }
+  });
+}
+
+function wireMobileMoveButton(button, movementKey, pointerKey) {
+  if (!button) {
+    return;
+  }
+
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    mobileMoveState[pointerKey] = event.pointerId;
+    pointer[movementKey] = true;
+    button.classList.add('is-pressed');
+    button.setPointerCapture(event.pointerId);
+  });
+
+  const release = (event) => {
+    if (mobileMoveState[pointerKey] !== event.pointerId) {
+      return;
+    }
+
+    mobileMoveState[pointerKey] = null;
+    pointer[movementKey] = false;
+    button.classList.remove('is-pressed');
+    if (button.hasPointerCapture(event.pointerId)) {
+      button.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+  button.addEventListener('lostpointercapture', release);
+}
+
+function handleMobileLookPointerDown(event) {
+  if (event.button !== 0) {
+    return;
+  }
+
+  event.preventDefault();
+  mobileLookState.isActive = true;
+  mobileLookState.pointerId = event.pointerId;
+  mobileLookPad?.setPointerCapture(event.pointerId);
+  updateMobileLookInput(event.clientX, event.clientY);
+}
+
+function handleMobileLookPointerMove(event) {
+  if (!mobileLookState.isActive || event.pointerId !== mobileLookState.pointerId) {
+    return;
+  }
+
+  event.preventDefault();
+  updateMobileLookInput(event.clientX, event.clientY);
+}
+
+function handleMobileLookPointerUp(event) {
+  if (event.pointerId !== mobileLookState.pointerId) {
+    return;
+  }
+
+  releaseMobileLookPad();
+}
+
+function updateMobileLookInput(clientX, clientY) {
+  if (!mobileLookPad) {
+    return;
+  }
+
+  const rect = mobileLookPad.getBoundingClientRect();
+  const centerX = rect.left + rect.width * 0.5;
+  const centerY = rect.top + rect.height * 0.5;
+  const radius = Math.min(rect.width, rect.height) * MOBILE_LOOK_PAD_RADIUS_RATIO;
+
+  let deltaX = clientX - centerX;
+  let deltaY = clientY - centerY;
+  const distance = Math.hypot(deltaX, deltaY);
+
+  if (distance > radius && distance > 0) {
+    const clampScale = radius / distance;
+    deltaX *= clampScale;
+    deltaY *= clampScale;
+  }
+
+  mobileLookState.inputX = radius > 0 ? deltaX / radius : 0;
+  mobileLookState.inputY = radius > 0 ? deltaY / radius : 0;
+
+  if (mobileLookThumb) {
+    mobileLookThumb.style.transform = `translate(${deltaX.toFixed(1)}px, ${deltaY.toFixed(1)}px)`;
+  }
+}
+
+function releaseMobileLookPad() {
+  if (!mobileLookState.isActive) {
+    return;
+  }
+
+  if (mobileLookPad && mobileLookState.pointerId !== null && mobileLookPad.hasPointerCapture(mobileLookState.pointerId)) {
+    mobileLookPad.releasePointerCapture(mobileLookState.pointerId);
+  }
+
+  mobileLookState.isActive = false;
+  mobileLookState.pointerId = null;
+  mobileLookState.inputX = 0;
+  mobileLookState.inputY = 0;
+
+  if (mobileLookThumb) {
+    mobileLookThumb.style.transform = 'translate(0px, 0px)';
+  }
+}
+
+function updateMobileLook(delta) {
+  if (!mobileLookState.isActive) {
+    return;
+  }
+
+  lookState.yaw -= mobileLookState.inputX * MOBILE_LOOK_SPEED * delta;
+  lookState.pitch = THREE.MathUtils.clamp(
+    lookState.pitch - mobileLookState.inputY * MOBILE_LOOK_SPEED * delta,
+    -Math.PI / 2 + 0.01,
+    Math.PI / 2 - 0.01,
+  );
+  applyCameraLook();
+}
+
+function isFullscreenSupported() {
+  return Boolean(
+    document.fullscreenEnabled ||
+    document.webkitFullscreenEnabled ||
+    document.documentElement.requestFullscreen ||
+    document.documentElement.webkitRequestFullscreen
+  );
+}
+
+function getFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function updateFullscreenButtonState() {
+  if (!fullscreenButton) {
+    return;
+  }
+
+  const isSupported = isFullscreenSupported();
+  const isActive = Boolean(getFullscreenElement());
+  fullscreenButton.disabled = !isSupported;
+  fullscreenButton.classList.toggle('is-active', isActive);
+  fullscreenButton.setAttribute('aria-label', isActive ? 'Exit fullscreen' : 'Enter fullscreen');
+  fullscreenButton.title = isActive ? 'Exit fullscreen' : 'Enter fullscreen';
+}
+
+async function toggleFullscreen() {
+  if (!isFullscreenSupported()) {
+    setStatus('Fullscreen is not available in this browser.');
+    return;
+  }
+
+  try {
+    if (getFullscreenElement()) {
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      }
+    } else if (document.documentElement.requestFullscreen) {
+      await document.documentElement.requestFullscreen();
+    } else if (document.documentElement.webkitRequestFullscreen) {
+      document.documentElement.webkitRequestFullscreen();
+    }
+  } catch (error) {
+    console.error(error);
+    setStatus(`Fullscreen failed. ${error.message || 'Check the browser console for details.'}`);
+  } finally {
+    updateFullscreenButtonState();
+  }
+}
+
 function handleViewportContextMenu(event) {
   event.preventDefault();
 }
@@ -506,6 +764,7 @@ function applyCameraLook() {
 function handleWindowBlur() {
   clearMovementState();
   stopLookDrag();
+  releaseMobileLookPad();
 }
 
 function handleKeyDown(event) {
@@ -535,6 +794,10 @@ function clearMovementState() {
   pointer.left = false;
   pointer.right = false;
   pointer.sprint = false;
+  mobileMoveState.forwardPointerId = null;
+  mobileMoveState.backPointerId = null;
+  mobileMoveForwardButton?.classList.remove('is-pressed');
+  mobileMoveBackButton?.classList.remove('is-pressed');
 }
 
 function updateMovementState(code, pressed) {
@@ -939,6 +1202,7 @@ function animate() {
 
   const delta = Math.min(clock.getDelta(), 0.05);
   const elapsedTime = clock.elapsedTime;
+  updateMobileLook(delta);
   playerController.update(delta, pointer);
   updateSelectionHelper();
 
@@ -967,6 +1231,7 @@ function handleResize() {
   camera.updateProjectionMatrix();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
+  releaseMobileLookPad();
 }
 
 function setStatus(message) {
@@ -1085,6 +1350,7 @@ function getSelectedItemStatus(item, detail = '') {
 function setSelectedItem(item) {
   selectionState.item = item;
   updateSelectedCard(item?.modelId ?? null);
+  updateMobileSelectionActionAvailability();
 
   if (selectionState.helper) {
     scene.remove(selectionState.helper);

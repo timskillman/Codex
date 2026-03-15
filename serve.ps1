@@ -1,5 +1,6 @@
 param(
-  [int]$Port = 8000
+  [int]$Port = 8000,
+  [string]$BindAddress = '192.168.0.7'
 )
 
 if (Get-Command node -ErrorAction SilentlyContinue) {
@@ -7,10 +8,13 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
   $script = @'
 const http = require("http");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const root = path.resolve(process.argv[2]);
 const port = Number(process.argv[3] || 8000);
+const host = process.argv[4] || "192.168.0.7";
+const requestHost = host === "0.0.0.0" || host === "::" ? "localhost" : host;
 const moonbaseDir = path.join(root, "assets", "models", "Moonbase");
 
 const mimeTypes = {
@@ -99,8 +103,8 @@ function buildModelManifest() {
   };
 }
 
-http.createServer((req, res) => {
-  const requestUrl = new URL(req.url, `http://localhost:${port}`);
+const server = http.createServer((req, res) => {
+  const requestUrl = new URL(req.url, `http://${requestHost}:${port}`);
   let pathname = decodeURIComponent(requestUrl.pathname);
 
   if (pathname === "/api/models") {
@@ -148,22 +152,48 @@ http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": contentType });
     fs.createReadStream(filePath).pipe(res);
   });
-}).listen(port, () => {
-  console.log(`Serving ${root} at http://localhost:${port}`);
+});
+
+server.listen(port, host, () => {
+  console.log(`Serving ${root}`);
+  console.log(`Local:   http://localhost:${port}`);
+
+  if (host === "0.0.0.0" || host === "::") {
+    const interfaces = os.networkInterfaces();
+    const lanAddresses = [];
+
+    for (const entries of Object.values(interfaces)) {
+      for (const entry of entries || []) {
+        if (!entry || entry.internal) {
+          continue;
+        }
+
+        if (entry.family === "IPv4" || entry.family === 4) {
+          lanAddresses.push(entry.address);
+        }
+      }
+    }
+
+    for (const address of [...new Set(lanAddresses)]) {
+      console.log(`Network: http://${address}:${port}`);
+    }
+  } else {
+    console.log(`Bound:   http://${host}:${port}`);
+  }
 });
 '@
 
-  $script | node - $root $Port
+  $script | node - $root $Port $BindAddress
   exit $LASTEXITCODE
 }
 
 if (Get-Command py -ErrorAction SilentlyContinue) {
-  py -m http.server $Port
+  py -m http.server $Port --bind $BindAddress
   exit $LASTEXITCODE
 }
 
 if (Get-Command python -ErrorAction SilentlyContinue) {
-  python -m http.server $Port
+  python -m http.server $Port --bind $BindAddress
   exit $LASTEXITCODE
 }
 
