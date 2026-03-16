@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Moon Corridor Builder</title>
-  <link rel="stylesheet" href="./styles.css?v=15">
+  <link rel="stylesheet" href="./styles.css?v=18">
 </head>
 <body>
   <div class="app-shell">
@@ -92,7 +92,7 @@
       </div>
     </div>
 
-    <div class="instruction-chip">
+    <div class="instruction-chip instruction-chip-desktop">
       <span>WASD to move</span>
       <span>Left click select</span>
       <span>Right drag look</span>
@@ -101,12 +101,20 @@
       <span>Delete removes selected</span>
     </div>
 
+    <div class="instruction-chip instruction-chip-touch">
+      <span>Tap module to place</span>
+      <span>Tap scene to select</span>
+      <span>Drag scene or look pad to look</span>
+      <span>Use the touch controls to move</span>
+      <span>Top buttons adjust the selection</span>
+    </div>
+
     <section class="picker-shell" aria-label="Moonbase model picker">
       <div class="picker-header">
         <div>
           <p class="eyebrow">Module Carousel</p>
         </div>
-        <p class="picker-note">Scroll or use the arrows to browse every OBJ model.</p>
+        <p class="picker-note">Scroll, swipe, or use the arrows to browse every OBJ model.</p>
       </div>
 
       <div class="picker-frame">
@@ -120,20 +128,18 @@
       </div>
     </section>
 
-    <div class="mobile-controls" aria-label="Mobile scene controls">
+    <div class="mobile-controls" aria-label="Touch scene controls">
       <div class="mobile-move-controls">
-        <button id="mobile-move-forward" class="mobile-control-button mobile-move-button" type="button" aria-label="Move forward">
-          <span>Fwd</span>
-        </button>
-        <button id="mobile-move-back" class="mobile-control-button mobile-move-button" type="button" aria-label="Move backward">
-          <span>Back</span>
-        </button>
+        <div id="mobile-move-pad" class="mobile-joystick-pad mobile-move-pad" aria-label="Move around control">
+          <div class="mobile-joystick-ring"></div>
+          <div id="mobile-move-thumb" class="mobile-joystick-thumb"></div>
+        </div>
       </div>
 
       <div class="mobile-look-controls">
-        <div id="mobile-look-pad" class="mobile-look-pad" aria-label="Look around control">
-          <div class="mobile-look-pad-ring"></div>
-          <div id="mobile-look-thumb" class="mobile-look-thumb"></div>
+        <div id="mobile-look-pad" class="mobile-joystick-pad mobile-look-pad" aria-label="Look around control">
+          <div class="mobile-joystick-ring"></div>
+          <div id="mobile-look-thumb" class="mobile-joystick-thumb"></div>
         </div>
       </div>
     </div>
@@ -155,7 +161,7 @@
 
   <noscript>This page needs JavaScript enabled to render the 3D scene.</noscript>
   <input id="scene-file-input" type="file" accept=".json,application/json" hidden>
-  <script type="module" src="./main.js?v=22"></script>
+  <script type="module" src="./main.js?v=24"></script>
 </body>
 </html>
 

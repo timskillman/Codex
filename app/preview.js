@@ -105,6 +105,8 @@ function createPreviewEntry({ model, canvas, imageWidth, imageHeight, tilt }) {
     return null;
   }
 
+  const previewTemplate = model.previewTemplate ?? model.template;
+
   const previewScene = new THREE.Scene();
   const previewCamera = new THREE.PerspectiveCamera(40, imageWidth / imageHeight, 0.1, 100);
   const previewLight = new THREE.HemisphereLight(0xa6cbff, 0x20180f, 1.4);
@@ -122,7 +124,7 @@ function createPreviewEntry({ model, canvas, imageWidth, imageHeight, tilt }) {
   pedestal.position.y = 0.01;
   previewScene.add(pedestal);
 
-  const clone = model.template.clone(true);
+  const clone = previewTemplate.clone(true);
   clone.rotation.x = tilt;
   clone.rotation.y = Math.PI / 5;
   previewScene.add(clone);

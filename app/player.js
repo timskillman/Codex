@@ -47,8 +47,8 @@ export function createPlayerController({
       camera.position.y = playerSurfaceY + eyeHeight;
     },
     update(delta, pointer) {
-      const strafeInput = Number(pointer.right) - Number(pointer.left);
-      const forwardInput = Number(pointer.forward) - Number(pointer.back);
+      const strafeInput = THREE.MathUtils.clamp((pointer.moveX ?? 0) + Number(pointer.right) - Number(pointer.left), -1, 1);
+      const forwardInput = THREE.MathUtils.clamp((pointer.moveY ?? 0) + Number(pointer.forward) - Number(pointer.back), -1, 1);
       const inputLength = Math.hypot(strafeInput, forwardInput);
 
       if (inputLength > 0) {

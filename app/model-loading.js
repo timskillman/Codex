@@ -3,6 +3,9 @@ import { MTLLoader } from '../vendor/three/MTLLoader.js';
 import { OBJLoader } from '../vendor/three/OBJLoader.js';
 import { toRelativeModelPath } from './scene-format.js';
 
+const ADJOINING_NORMAL_ANGLE_DEGREES = 30;
+const NORMAL_WELD_TOLERANCE = 1e-4;
+
 export function prepareTexture(renderer, texture) {
   if (!texture) {
     return;
@@ -10,6 +13,28 @@ export function prepareTexture(renderer, texture) {
 
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
+}
+
+export function materialContributesToBloom(material) {
+  if (Array.isArray(material)) {
+    return material.some((entry) => materialContributesToBloom(entry));
+  }
+
+  if (!material) {
+    return false;
+  }
+
+  if (material.userData?.worldgenIsTexturedSelfLitMaterial) {
+    return true;
+  }
+
+  if (material.emissiveMap) {
+    return true;
+  }
+
+  const emissiveLuminance = getColorLuminance(material.emissive);
+  const emissiveIntensity = Number.isFinite(material.emissiveIntensity) ? material.emissiveIntensity : 1;
+  return emissiveLuminance * emissiveIntensity > 0.08;
 }
 
 export async function loadModels({
@@ -54,6 +79,7 @@ export async function loadModels({
       }
 
       remapZUpGeometryToYUp(child.geometry);
+      child.geometry = generateAdjoiningSurfaceNormals(child.geometry, ADJOINING_NORMAL_ANGLE_DEGREES);
       if (!usesMtl) {
         child.material = material;
       } else {
@@ -61,7 +87,6 @@ export async function loadModels({
       }
       child.castShadow = true;
       child.receiveShadow = true;
-      child.geometry.computeVertexNormals();
     });
 
     const rawBox = new THREE.Box3().setFromObject(rawObject);
@@ -230,6 +255,14 @@ function getPrimarySelfLitTexture(material) {
   return material.map ?? material.emissiveMap ?? null;
 }
 
+function getColorLuminance(color) {
+  if (!color?.isColor) {
+    return 0;
+  }
+
+  return color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
+}
+
 function ignoreDiffuseMapAlpha(material) {
   material.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -287,4 +320,103 @@ function remapZUpGeometryToYUp(geometry) {
 
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
+}
+
+function generateAdjoiningSurfaceNormals(sourceGeometry, maxAngleDegrees, weldTolerance = NORMAL_WELD_TOLERANCE) {
+  const geometry = sourceGeometry.index ? sourceGeometry.toNonIndexed() : sourceGeometry;
+  const position = geometry.getAttribute('position');
+  if (!position || position.count < 3 || position.count % 3 !== 0) {
+    return geometry;
+  }
+
+  const maxAngleRadians = THREE.MathUtils.degToRad(maxAngleDegrees);
+  const smoothingThreshold = Math.cos(maxAngleRadians);
+  const faceCount = position.count / 3;
+  const faceNormals = new Array(faceCount);
+  const weightedFaceNormals = new Array(faceCount);
+  const adjacency = new Map();
+  const normalValues = new Float32Array(position.count * 3);
+
+  const vertexA = new THREE.Vector3();
+  const vertexB = new THREE.Vector3();
+  const vertexC = new THREE.Vector3();
+  const edgeAB = new THREE.Vector3();
+  const edgeAC = new THREE.Vector3();
+  const weightedNormal = new THREE.Vector3();
+  const accumulatedNormal = new THREE.Vector3();
+
+  for (let faceIndex = 0; faceIndex < faceCount; faceIndex += 1) {
+    const vertexOffset = faceIndex * 3;
+    readVertex(position, vertexOffset, vertexA);
+    readVertex(position, vertexOffset + 1, vertexB);
+    readVertex(position, vertexOffset + 2, vertexC);
+
+    edgeAB.subVectors(vertexB, vertexA);
+    edgeAC.subVectors(vertexC, vertexA);
+    weightedNormal.crossVectors(edgeAB, edgeAC);
+
+    if (weightedNormal.lengthSq() < 1e-12) {
+      weightedFaceNormals[faceIndex] = new THREE.Vector3(0, 1, 0);
+      faceNormals[faceIndex] = new THREE.Vector3(0, 1, 0);
+    } else {
+      weightedFaceNormals[faceIndex] = weightedNormal.clone();
+      faceNormals[faceIndex] = weightedNormal.clone().normalize();
+    }
+
+    for (let localVertex = 0; localVertex < 3; localVertex += 1) {
+      const vertexIndex = vertexOffset + localVertex;
+      const vertexKey = getQuantizedVertexKey(position, vertexIndex, weldTolerance);
+      if (!adjacency.has(vertexKey)) {
+        adjacency.set(vertexKey, []);
+      }
+      adjacency.get(vertexKey).push(faceIndex);
+    }
+  }
+
+  for (let vertexIndex = 0; vertexIndex < position.count; vertexIndex += 1) {
+    const faceIndex = Math.floor(vertexIndex / 3);
+    const currentFaceNormal = faceNormals[faceIndex];
+    const adjacentFaces = adjacency.get(getQuantizedVertexKey(position, vertexIndex, weldTolerance)) ?? [];
+    accumulatedNormal.set(0, 0, 0);
+
+    for (const adjacentFaceIndex of adjacentFaces) {
+      if (currentFaceNormal.dot(faceNormals[adjacentFaceIndex]) < smoothingThreshold) {
+        continue;
+      }
+
+      accumulatedNormal.add(weightedFaceNormals[adjacentFaceIndex]);
+    }
+
+    if (accumulatedNormal.lengthSq() < 1e-12) {
+      accumulatedNormal.copy(currentFaceNormal);
+    } else {
+      accumulatedNormal.normalize();
+    }
+
+    normalValues[vertexIndex * 3] = accumulatedNormal.x;
+    normalValues[vertexIndex * 3 + 1] = accumulatedNormal.y;
+    normalValues[vertexIndex * 3 + 2] = accumulatedNormal.z;
+  }
+
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normalValues, 3));
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function readVertex(positionAttribute, index, target) {
+  return target.set(
+    positionAttribute.getX(index),
+    positionAttribute.getY(index),
+    positionAttribute.getZ(index),
+  );
+}
+
+function getQuantizedVertexKey(positionAttribute, index, tolerance) {
+  const invTolerance = 1 / tolerance;
+  return [
+    Math.round(positionAttribute.getX(index) * invTolerance),
+    Math.round(positionAttribute.getY(index) * invTolerance),
+    Math.round(positionAttribute.getZ(index) * invTolerance),
+  ].join(':');
 }

@@ -1,6 +1,6 @@
 param(
   [int]$Port = 8000,
-  [string]$BindAddress = '192.168.0.7'
+  [string]$BindAddress = '192.168.122.59'
 )
 
 if (Get-Command node -ErrorAction SilentlyContinue) {
@@ -13,7 +13,7 @@ const path = require("path");
 
 const root = path.resolve(process.argv[2]);
 const port = Number(process.argv[3] || 8000);
-const host = process.argv[4] || "192.168.0.7";
+const host = process.argv[4] || "192.168.122.59";
 const requestHost = host === "0.0.0.0" || host === "::" ? "localhost" : host;
 const moonbaseDir = path.join(root, "assets", "models", "Moonbase");
 

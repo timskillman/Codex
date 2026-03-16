@@ -1,5 +1,10 @@
 import * as THREE from './node_modules/three/build/three.module.js';
-import { loadModels as loadModelLibrary, prepareTexture as prepareSceneTexture } from './app/model-loading.js';
+import { attachEmissiveBloomShells } from './app/bloom.js';
+import {
+  loadModels as loadModelLibrary,
+  materialContributesToBloom,
+  prepareTexture as prepareSceneTexture,
+} from './app/model-loading.js';
 import { createPlayerController } from './app/player.js';
 import { createPreviewSystem } from './app/preview.js';
 import {
@@ -21,8 +26,12 @@ const ATTACHMENT_GAP = 0;
 const EYE_HEIGHT = 1.72;
 const MOVE_SPEED = 7.6;
 const LOOK_DRAG_SENSITIVITY = 0.0024;
+const TOUCH_LOOK_DRAG_SENSITIVITY = 0.0032;
 const MOBILE_LOOK_SPEED = 2.8;
 const MOBILE_LOOK_PAD_RADIUS_RATIO = 0.34;
+const MOBILE_MOVE_DEADZONE = 0.14;
+const TOUCH_VIEWPORT_TAP_SLOP = 10;
+const TOUCH_VIEWPORT_CLICK_SUPPRESSION_MS = 400;
 const PLAYER_MAX_STEP_HEIGHT = EYE_HEIGHT * 0.5;
 const PLAYER_COLLISION_RADIUS = 0.28;
 const PLAYER_COLLISION_CLEARANCE = 0.03;
@@ -42,9 +51,17 @@ const WORLDGEN_FILE_TYPE = 'WorldGen';
 const WORLDGEN_FILE_VERSION = '1.0.0';
 const WORLDGEN_FILE_PICKER_ID = 'worldgen-scene';
 const DEFAULT_ENVIRONMENT = 'Moonbase';
+const MODEL_LOD_SWITCH_DISTANCE = 24;
 const START_CAMERA_POSITION = new THREE.Vector3(0, EYE_HEIGHT, 11.5);
 const START_CAMERA_PITCH = 0;
 const START_CAMERA_YAW = 0;
+const MODULE_INTERIOR_LIGHT_COLOR = 0xfff1d9;
+const MODULE_INTERIOR_LIGHT_HEIGHT = EYE_HEIGHT * 0.5;
+const MODULE_INTERIOR_LIGHT_INTENSITY = 10;
+const MODULE_INTERIOR_LIGHT_MIN_DISTANCE = 13;
+const MODULE_INTERIOR_LIGHT_MAX_DISTANCE = 34;
+const MODULE_INTERIOR_LIGHT_STICKY_MARGIN = 0.35;
+const MODULE_INTERIOR_LIGHT_TOP_CLEARANCE = 0.4;
 
 const newSceneButton = document.querySelector('#new-scene');
 const saveSceneButton = document.querySelector('#save-scene');
@@ -65,8 +82,8 @@ const mobileRotateRightButton = document.querySelector('#mobile-rotate-right');
 const mobileMoveUpButton = document.querySelector('#mobile-move-up');
 const mobileMoveDownButton = document.querySelector('#mobile-move-down');
 const mobileDeleteSelectionButton = document.querySelector('#mobile-delete-selection');
-const mobileMoveForwardButton = document.querySelector('#mobile-move-forward');
-const mobileMoveBackButton = document.querySelector('#mobile-move-back');
+const mobileMovePad = document.querySelector('#mobile-move-pad');
+const mobileMoveThumb = document.querySelector('#mobile-move-thumb');
 const mobileLookPad = document.querySelector('#mobile-look-pad');
 const mobileLookThumb = document.querySelector('#mobile-look-thumb');
 
@@ -95,6 +112,8 @@ const pointer = {
   forward: false,
   back: false,
   left: false,
+  moveX: 0,
+  moveY: 0,
   right: false,
   sprint: false,
 };
@@ -113,8 +132,19 @@ const mobileLookState = {
   pointerId: null,
 };
 const mobileMoveState = {
-  backPointerId: null,
-  forwardPointerId: null,
+  inputX: 0,
+  inputY: 0,
+  isActive: false,
+  pointerId: null,
+};
+const touchViewportState = {
+  isActive: false,
+  isDragging: false,
+  lastX: 0,
+  lastY: 0,
+  pointerId: null,
+  suppressClickUntil: 0,
+  travel: 0,
 };
 const scenePointer = new THREE.Vector2();
 const scenePickRaycaster = new THREE.Raycaster();
@@ -147,6 +177,13 @@ const modelLibrary = {
   environment: DEFAULT_ENVIRONMENT,
   models: [],
 };
+const moduleInteriorLightState = {
+  currentItem: null,
+  light: createModuleInteriorLight(),
+  moduleCenter: new THREE.Vector3(),
+  moduleSize: new THREE.Vector3(),
+};
+scene.add(moduleInteriorLightState.light);
 
 const loadingManager = new THREE.LoadingManager();
 const textureLoader = new THREE.TextureLoader(loadingManager);
@@ -196,7 +233,7 @@ async function init() {
   try {
     const manifest = await loadModelManifest();
     const textures = await loadTextures(manifest);
-    const models = await loadModelLibrary({
+    const loadedModels = await loadModelLibrary({
       definitions: manifest.models,
       loadingManager,
       modelScale: MODEL_SCALE,
@@ -204,6 +241,8 @@ async function init() {
       renderer,
       textures,
     });
+    tagModelTemplatesForBloom(loadedModels);
+    const models = buildRenderableModels(loadedModels);
     registerModelLibrary(models, manifest.environment);
     createPicker(models);
     updateSceneFileActionAvailability();
@@ -299,10 +338,130 @@ function registerModelLibrary(models, environment) {
 
   for (const model of models) {
     modelLibrary.byId.set(model.id, model);
-    modelLibrary.byPath.set(normalizeSceneModulePathFromData(model.relativePath), model);
+    const aliasPaths = Array.isArray(model.pathAliases) && model.pathAliases.length > 0
+      ? model.pathAliases
+      : [model.relativePath];
+    for (const aliasPath of aliasPaths) {
+      modelLibrary.byPath.set(normalizeSceneModulePathFromData(aliasPath), model);
+    }
   }
 
   modelLibrary.environment = environment || inferEnvironmentFromModelsFromData(models, DEFAULT_ENVIRONMENT) || DEFAULT_ENVIRONMENT;
+}
+
+function tagModelTemplatesForBloom(models) {
+  for (const model of models) {
+    attachEmissiveBloomShells(model.template, materialContributesToBloom);
+  }
+}
+
+function buildRenderableModels(models) {
+  const groupedModels = new Map();
+
+  for (const model of models) {
+    const groupKey = getModelLodGroupKey(model.relativePath);
+    const grouped = groupedModels.get(groupKey) ?? { far: null, near: null };
+
+    if (isFarLodModel(model.relativePath)) {
+      grouped.far = grouped.far ?? model;
+    } else {
+      grouped.near = grouped.near ?? model;
+    }
+
+    groupedModels.set(groupKey, grouped);
+  }
+
+  return Array.from(groupedModels.entries())
+    .map(([groupKey, grouped]) => createRenderableModel(groupKey, grouped))
+    .filter(Boolean)
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function createRenderableModel(groupKey, { near, far }) {
+  const primaryModel = near ?? far;
+  if (!primaryModel) {
+    return null;
+  }
+
+  const nearModel = near ?? far;
+  const farModel = far ?? nearModel;
+  const usesDistinctFarModel = Boolean(far) && far !== nearModel;
+  const template = usesDistinctFarModel
+    ? createLodTemplate(nearModel.template, farModel.template)
+    : nearModel.template;
+
+  return {
+    ...primaryModel,
+    id: primaryModel.id,
+    label: stripLodSuffixFromLabel(primaryModel.label),
+    pathAliases: Array.from(new Set([nearModel.relativePath, farModel.relativePath].filter(Boolean))),
+    previewTemplate: nearModel.template,
+    relativePath: nearModel.relativePath,
+    size: nearModel.size.clone(),
+    template,
+    lodGroupKey: groupKey,
+  };
+}
+
+function createLodTemplate(nearTemplate, farTemplate) {
+  const lod = new THREE.LOD();
+  lod.name = nearTemplate.name;
+
+  const nearRoot = nearTemplate.clone(true);
+  const farRoot = farTemplate.clone(true);
+  farRoot.visible = false;
+  markFarLodMeshes(farRoot);
+
+  lod.addLevel(nearRoot, 0);
+  lod.addLevel(farRoot, MODEL_LOD_SWITCH_DISTANCE);
+  lod.updateMatrixWorld(true);
+  return lod;
+}
+
+function markFarLodMeshes(root) {
+  root.traverse((child) => {
+    if (!child.isMesh) {
+      return;
+    }
+
+    child.userData.worldgenIgnoreCollision = true;
+  });
+}
+
+function isFarLodModel(relativePath) {
+  return /(?:[_\s-]?lod0)(?:\.[^./\\]+)?$/i.test(normalizeSceneModulePathFromData(relativePath));
+}
+
+function getModelLodGroupKey(relativePath) {
+  const normalizedPath = normalizeSceneModulePathFromData(relativePath);
+  const lastSlash = normalizedPath.lastIndexOf('/');
+  const directory = lastSlash >= 0 ? normalizedPath.slice(0, lastSlash + 1) : '';
+  const fileName = lastSlash >= 0 ? normalizedPath.slice(lastSlash + 1) : normalizedPath;
+  const extensionIndex = fileName.lastIndexOf('.');
+  const stem = extensionIndex >= 0 ? fileName.slice(0, extensionIndex) : fileName;
+  const extension = extensionIndex >= 0 ? fileName.slice(extensionIndex) : '';
+  return `${directory}${stripLodSuffix(stem)}${extension}`;
+}
+
+function stripLodSuffixFromLabel(label) {
+  return stripLodSuffix(String(label ?? '')).trim() || String(label ?? '');
+}
+
+function stripLodSuffix(value) {
+  return String(value ?? '').replace(/(?:[_\s-]?lod0)$/i, '');
+}
+
+function createModuleInteriorLight() {
+  const light = new THREE.PointLight(MODULE_INTERIOR_LIGHT_COLOR, MODULE_INTERIOR_LIGHT_INTENSITY, 10, 2);
+  light.visible = false;
+  light.castShadow = true;
+  light.shadow.mapSize.set(1024, 1024);
+  light.shadow.camera.near = 0.2;
+  light.shadow.camera.far = MODULE_INTERIOR_LIGHT_MAX_DISTANCE;
+  light.shadow.bias = -0.001;
+  light.shadow.normalBias = 0.04;
+  light.shadow.radius = 2.4;
+  return light;
 }
 
 function addModelToScene(model, options = {}) {
@@ -428,9 +587,13 @@ function wireControls() {
 }
 
 function wireMobileControls() {
-  wireMobileMoveButton(mobileMoveForwardButton, 'forward', 'forwardPointerId');
-  wireMobileMoveButton(mobileMoveBackButton, 'back', 'backPointerId');
   wireMobileSelectionActions();
+
+  mobileMovePad?.addEventListener('pointerdown', handleMobileMovePointerDown);
+  mobileMovePad?.addEventListener('pointermove', handleMobileMovePointerMove);
+  mobileMovePad?.addEventListener('pointerup', handleMobileMovePointerUp);
+  mobileMovePad?.addEventListener('pointercancel', handleMobileMovePointerUp);
+  mobileMovePad?.addEventListener('lostpointercapture', handleMobileMovePointerUp);
 
   mobileLookPad?.addEventListener('pointerdown', handleMobileLookPointerDown);
   mobileLookPad?.addEventListener('pointermove', handleMobileLookPointerMove);
@@ -485,43 +648,229 @@ function updateMobileSelectionActionAvailability() {
   });
 }
 
-function wireMobileMoveButton(button, movementKey, pointerKey) {
-  if (!button) {
+function handleMobileMovePointerDown(event) {
+  if (event.button !== 0 || mobileMoveState.isActive) {
     return;
   }
 
-  button.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) {
-      return;
-    }
+  event.preventDefault();
+  mobileMoveState.isActive = true;
+  mobileMoveState.pointerId = event.pointerId;
+  mobileMovePad?.classList.add('is-active');
+  mobileMovePad?.setPointerCapture(event.pointerId);
+  updateMobileMoveInput(event.clientX, event.clientY);
+}
 
-    event.preventDefault();
-    mobileMoveState[pointerKey] = event.pointerId;
-    pointer[movementKey] = true;
-    button.classList.add('is-pressed');
-    button.setPointerCapture(event.pointerId);
-  });
+function handleMobileMovePointerMove(event) {
+  if (!mobileMoveState.isActive || event.pointerId !== mobileMoveState.pointerId) {
+    return;
+  }
 
-  const release = (event) => {
-    if (mobileMoveState[pointerKey] !== event.pointerId) {
-      return;
-    }
+  event.preventDefault();
+  updateMobileMoveInput(event.clientX, event.clientY);
+}
 
-    mobileMoveState[pointerKey] = null;
-    pointer[movementKey] = false;
-    button.classList.remove('is-pressed');
-    if (button.hasPointerCapture(event.pointerId)) {
-      button.releasePointerCapture(event.pointerId);
-    }
+function handleMobileMovePointerUp(event) {
+  if (event.pointerId !== mobileMoveState.pointerId) {
+    return;
+  }
+
+  releaseMobileMovePad();
+}
+
+function isTouchViewportPointer(event) {
+  return event.pointerType === 'touch' || event.pointerType === 'pen';
+}
+
+function beginTouchViewportGesture(event) {
+  if (event.button !== 0 || touchViewportState.isActive) {
+    return;
+  }
+
+  event.preventDefault();
+  touchViewportState.isActive = true;
+  touchViewportState.isDragging = false;
+  touchViewportState.lastX = event.clientX;
+  touchViewportState.lastY = event.clientY;
+  touchViewportState.pointerId = event.pointerId;
+  touchViewportState.travel = 0;
+  renderer.domElement.setPointerCapture(event.pointerId);
+}
+
+function updateTouchViewportGesture(event) {
+  if (!touchViewportState.isActive || event.pointerId !== touchViewportState.pointerId) {
+    return false;
+  }
+
+  event.preventDefault();
+  const deltaX = event.clientX - touchViewportState.lastX;
+  const deltaY = event.clientY - touchViewportState.lastY;
+  touchViewportState.lastX = event.clientX;
+  touchViewportState.lastY = event.clientY;
+  touchViewportState.travel += Math.hypot(deltaX, deltaY);
+
+  if (!touchViewportState.isDragging && touchViewportState.travel > TOUCH_VIEWPORT_TAP_SLOP) {
+    touchViewportState.isDragging = true;
+    document.body.classList.add('is-looking');
+  }
+
+  if (!touchViewportState.isDragging) {
+    return true;
+  }
+
+  lookState.yaw -= deltaX * TOUCH_LOOK_DRAG_SENSITIVITY;
+  lookState.pitch = THREE.MathUtils.clamp(
+    lookState.pitch - deltaY * TOUCH_LOOK_DRAG_SENSITIVITY,
+    -Math.PI / 2 + 0.01,
+    Math.PI / 2 - 0.01,
+  );
+  applyCameraLook();
+  return true;
+}
+
+function endTouchViewportGesture(pointerId) {
+  if (pointerId !== null && renderer.domElement.hasPointerCapture(pointerId)) {
+    renderer.domElement.releasePointerCapture(pointerId);
+  }
+
+  touchViewportState.isActive = false;
+  touchViewportState.isDragging = false;
+  touchViewportState.lastX = 0;
+  touchViewportState.lastY = 0;
+  touchViewportState.pointerId = null;
+  touchViewportState.travel = 0;
+  document.body.classList.remove('is-looking');
+}
+
+function handleViewportSelection(event) {
+  const pickedItem = pickPlacedItem(event);
+  setSelectedItem(pickedItem);
+
+  if (pickedItem) {
+    setStatus(getSelectedItemStatus(pickedItem));
+  }
+}
+
+function finishTouchViewportGesture(event) {
+  if (!touchViewportState.isActive || event.pointerId !== touchViewportState.pointerId) {
+    return false;
+  }
+
+  event.preventDefault();
+  const shouldSelect = !touchViewportState.isDragging && touchViewportState.travel <= TOUCH_VIEWPORT_TAP_SLOP;
+  endTouchViewportGesture(event.pointerId);
+  touchViewportState.suppressClickUntil = performance.now() + TOUCH_VIEWPORT_CLICK_SUPPRESSION_MS;
+
+  if (shouldSelect) {
+    handleViewportSelection(event);
+  }
+
+  return true;
+}
+
+function cancelTouchViewportGesture(event) {
+  if (!touchViewportState.isActive || event.pointerId !== touchViewportState.pointerId) {
+    return false;
+  }
+
+  endTouchViewportGesture(event.pointerId);
+  touchViewportState.suppressClickUntil = performance.now() + TOUCH_VIEWPORT_CLICK_SUPPRESSION_MS;
+  return true;
+}
+
+function stopTouchViewportGesture() {
+  if (!touchViewportState.isActive) {
+    return;
+  }
+
+  endTouchViewportGesture(touchViewportState.pointerId);
+}
+
+function resolveMobilePadInput(pad, clientX, clientY) {
+  if (!pad) {
+    return {
+      deltaX: 0,
+      deltaY: 0,
+      inputX: 0,
+      inputY: 0,
+    };
+  }
+
+  const rect = pad.getBoundingClientRect();
+  const centerX = rect.left + rect.width * 0.5;
+  const centerY = rect.top + rect.height * 0.5;
+  const radius = Math.min(rect.width, rect.height) * MOBILE_LOOK_PAD_RADIUS_RATIO;
+
+  let deltaX = clientX - centerX;
+  let deltaY = clientY - centerY;
+  const distance = Math.hypot(deltaX, deltaY);
+
+  if (distance > radius && distance > 0) {
+    const clampScale = radius / distance;
+    deltaX *= clampScale;
+    deltaY *= clampScale;
+  }
+
+  return {
+    deltaX,
+    deltaY,
+    inputX: radius > 0 ? deltaX / radius : 0,
+    inputY: radius > 0 ? deltaY / radius : 0,
   };
+}
 
-  button.addEventListener('pointerup', release);
-  button.addEventListener('pointercancel', release);
-  button.addEventListener('lostpointercapture', release);
+function applyRadialDeadzone(inputX, inputY, deadzone) {
+  const magnitude = Math.hypot(inputX, inputY);
+  if (magnitude <= deadzone || magnitude === 0) {
+    return { inputX: 0, inputY: 0 };
+  }
+
+  const scaledMagnitude = (magnitude - deadzone) / (1 - deadzone);
+  const scale = scaledMagnitude / magnitude;
+  return {
+    inputX: inputX * scale,
+    inputY: inputY * scale,
+  };
+}
+
+function updateMobileMoveInput(clientX, clientY) {
+  const { deltaX, deltaY, inputX, inputY } = resolveMobilePadInput(mobileMovePad, clientX, clientY);
+  const adjusted = applyRadialDeadzone(inputX, -inputY, MOBILE_MOVE_DEADZONE);
+
+  mobileMoveState.inputX = adjusted.inputX;
+  mobileMoveState.inputY = adjusted.inputY;
+  pointer.moveX = adjusted.inputX;
+  pointer.moveY = adjusted.inputY;
+
+  if (mobileMoveThumb) {
+    mobileMoveThumb.style.transform = `translate(${deltaX.toFixed(1)}px, ${deltaY.toFixed(1)}px)`;
+  }
+}
+
+function releaseMobileMovePad() {
+  if (!mobileMoveState.isActive) {
+    return;
+  }
+
+  if (mobileMovePad && mobileMoveState.pointerId !== null && mobileMovePad.hasPointerCapture(mobileMoveState.pointerId)) {
+    mobileMovePad.releasePointerCapture(mobileMoveState.pointerId);
+  }
+
+  mobileMoveState.isActive = false;
+  mobileMoveState.pointerId = null;
+  mobileMoveState.inputX = 0;
+  mobileMoveState.inputY = 0;
+  pointer.moveX = 0;
+  pointer.moveY = 0;
+  mobileMovePad?.classList.remove('is-active');
+
+  if (mobileMoveThumb) {
+    mobileMoveThumb.style.transform = 'translate(0px, 0px)';
+  }
 }
 
 function handleMobileLookPointerDown(event) {
-  if (event.button !== 0) {
+  if (event.button !== 0 || mobileLookState.isActive) {
     return;
   }
 
@@ -550,27 +899,11 @@ function handleMobileLookPointerUp(event) {
 }
 
 function updateMobileLookInput(clientX, clientY) {
-  if (!mobileLookPad) {
-    return;
-  }
+  const { deltaX, deltaY, inputX, inputY } = resolveMobilePadInput(mobileLookPad, clientX, clientY);
+  mobileLookState.inputX = inputX;
+  mobileLookState.inputY = inputY;
 
-  const rect = mobileLookPad.getBoundingClientRect();
-  const centerX = rect.left + rect.width * 0.5;
-  const centerY = rect.top + rect.height * 0.5;
-  const radius = Math.min(rect.width, rect.height) * MOBILE_LOOK_PAD_RADIUS_RATIO;
-
-  let deltaX = clientX - centerX;
-  let deltaY = clientY - centerY;
-  const distance = Math.hypot(deltaX, deltaY);
-
-  if (distance > radius && distance > 0) {
-    const clampScale = radius / distance;
-    deltaX *= clampScale;
-    deltaY *= clampScale;
-  }
-
-  mobileLookState.inputX = radius > 0 ? deltaX / radius : 0;
-  mobileLookState.inputY = radius > 0 ? deltaY / radius : 0;
+  mobileLookPad?.classList.add('is-active');
 
   if (mobileLookThumb) {
     mobileLookThumb.style.transform = `translate(${deltaX.toFixed(1)}px, ${deltaY.toFixed(1)}px)`;
@@ -590,6 +923,7 @@ function releaseMobileLookPad() {
   mobileLookState.pointerId = null;
   mobileLookState.inputX = 0;
   mobileLookState.inputY = 0;
+  mobileLookPad?.classList.remove('is-active');
 
   if (mobileLookThumb) {
     mobileLookThumb.style.transform = 'translate(0px, 0px)';
@@ -667,6 +1001,11 @@ function handleViewportContextMenu(event) {
 }
 
 function handleViewportPointerDown(event) {
+  if (isTouchViewportPointer(event)) {
+    beginTouchViewportGesture(event);
+    return;
+  }
+
   if (event.button !== 2) {
     return;
   }
@@ -681,6 +1020,10 @@ function handleViewportPointerDown(event) {
 }
 
 function handleViewportPointerMove(event) {
+  if (updateTouchViewportGesture(event)) {
+    return;
+  }
+
   if (!lookState.isDragging || event.pointerId !== lookState.pointerId) {
     return;
   }
@@ -697,6 +1040,10 @@ function handleViewportPointerMove(event) {
 }
 
 function handleViewportPointerUp(event) {
+  if (finishTouchViewportGesture(event)) {
+    return;
+  }
+
   if (!lookState.isDragging || event.pointerId !== lookState.pointerId || event.button !== 2) {
     return;
   }
@@ -708,6 +1055,10 @@ function handleViewportPointerUp(event) {
 }
 
 function handleViewportPointerCancel(event) {
+  if (cancelTouchViewportGesture(event)) {
+    return;
+  }
+
   if (!lookState.isDragging || event.pointerId !== lookState.pointerId) {
     return;
   }
@@ -719,16 +1070,15 @@ function handleViewportPointerCancel(event) {
 }
 
 function handleViewportClick(event) {
+  if (performance.now() < touchViewportState.suppressClickUntil) {
+    return;
+  }
+
   if (event.button !== 0) {
     return;
   }
 
-  const pickedItem = pickPlacedItem(event);
-  setSelectedItem(pickedItem);
-
-  if (pickedItem) {
-    setStatus(getSelectedItemStatus(pickedItem));
-  }
+  handleViewportSelection(event);
 }
 
 function pickPlacedItem(event) {
@@ -764,6 +1114,7 @@ function applyCameraLook() {
 function handleWindowBlur() {
   clearMovementState();
   stopLookDrag();
+  stopTouchViewportGesture();
   releaseMobileLookPad();
 }
 
@@ -792,12 +1143,11 @@ function clearMovementState() {
   pointer.forward = false;
   pointer.back = false;
   pointer.left = false;
+  pointer.moveX = 0;
+  pointer.moveY = 0;
   pointer.right = false;
   pointer.sprint = false;
-  mobileMoveState.forwardPointerId = null;
-  mobileMoveState.backPointerId = null;
-  mobileMoveForwardButton?.classList.remove('is-pressed');
-  mobileMoveBackButton?.classList.remove('is-pressed');
+  releaseMobileMovePad();
 }
 
 function updateMovementState(code, pressed) {
@@ -1204,6 +1554,7 @@ function animate() {
   const elapsedTime = clock.elapsedTime;
   updateMobileLook(delta);
   playerController.update(delta, pointer);
+  updateModuleInteriorLight();
   updateSelectionHelper();
 
   const stars = scene.getObjectByName('starfield');
@@ -1321,6 +1672,7 @@ function deleteSelectedItem() {
 
 function clearPlacedItems() {
   setSelectedItem(null);
+  setModuleInteriorLightItem(null);
 
   for (const item of placementState.placedItems) {
     detachPlacedItem(item);
@@ -1331,6 +1683,10 @@ function clearPlacedItems() {
 }
 
 function detachPlacedItem(item) {
+  if (moduleInteriorLightState.currentItem === item) {
+    setModuleInteriorLightItem(null);
+  }
+
   for (const mesh of item.collisionMeshes) {
     const pickIndex = scenePickMeshes.indexOf(mesh);
     if (pickIndex !== -1) {
@@ -1398,7 +1754,7 @@ function collectCollisionMeshes(root) {
   const meshes = [];
 
   root.traverse((child) => {
-    if (child.isMesh) {
+    if (child.isMesh && !child.userData?.worldgenIgnoreCollision) {
       meshes.push(child);
     }
   });
@@ -1408,5 +1764,89 @@ function collectCollisionMeshes(root) {
 
 function refreshPlacedItemCollision(item) {
   item.group.updateMatrixWorld(true);
-  item.collisionBounds.setFromObject(item.group);
+  item.collisionBounds.makeEmpty();
+
+  for (const mesh of item.collisionMeshes) {
+    item.collisionBounds.expandByObject(mesh);
+  }
+}
+
+function updateModuleInteriorLight() {
+  const currentItem = resolveViewerModuleItem(camera.position);
+  setModuleInteriorLightItem(currentItem);
+
+  if (!currentItem) {
+    return;
+  }
+
+  const bounds = currentItem.collisionBounds;
+  const light = moduleInteriorLightState.light;
+  bounds.getCenter(moduleInteriorLightState.moduleCenter);
+  bounds.getSize(moduleInteriorLightState.moduleSize);
+  const minLightY = bounds.min.y + 0.7;
+  const maxLightY = Math.max(bounds.max.y - MODULE_INTERIOR_LIGHT_TOP_CLEARANCE, minLightY);
+  const targetY = THREE.MathUtils.clamp(bounds.min.y + MODULE_INTERIOR_LIGHT_HEIGHT, minLightY, maxLightY);
+  const coverage = Math.max(
+    moduleInteriorLightState.moduleSize.x,
+    moduleInteriorLightState.moduleSize.z,
+    moduleInteriorLightState.moduleSize.y * 1.2,
+  );
+
+  light.position.set(moduleInteriorLightState.moduleCenter.x, targetY, moduleInteriorLightState.moduleCenter.z);
+  light.distance = THREE.MathUtils.clamp(coverage * 2.5, MODULE_INTERIOR_LIGHT_MIN_DISTANCE, MODULE_INTERIOR_LIGHT_MAX_DISTANCE);
+  light.shadow.camera.far = light.distance;
+}
+
+function resolveViewerModuleItem(position) {
+  const currentItem = moduleInteriorLightState.currentItem;
+  if (
+    currentItem &&
+    placementState.placedItems.includes(currentItem) &&
+    isPointWithinBounds(currentItem.collisionBounds, position, MODULE_INTERIOR_LIGHT_STICKY_MARGIN)
+  ) {
+    return currentItem;
+  }
+
+  let bestItem = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const item of placementState.placedItems) {
+    if (!isPointWithinBounds(item.collisionBounds, position)) {
+      continue;
+    }
+
+    const center = item.collisionBounds.getCenter(moduleInteriorLightState.moduleCenter);
+    const size = item.collisionBounds.getSize(moduleInteriorLightState.moduleSize);
+    const volume = Math.max(size.x * size.y * size.z, 0.001);
+    const distanceSq = center.distanceToSquared(position);
+    const score = distanceSq + volume * 0.0015;
+
+    if (score < bestScore) {
+      bestItem = item;
+      bestScore = score;
+    }
+  }
+
+  return bestItem;
+}
+
+function isPointWithinBounds(bounds, point, margin = 0) {
+  return (
+    point.x >= bounds.min.x - margin &&
+    point.x <= bounds.max.x + margin &&
+    point.y >= bounds.min.y - margin &&
+    point.y <= bounds.max.y + margin &&
+    point.z >= bounds.min.z - margin &&
+    point.z <= bounds.max.z + margin
+  );
+}
+
+function setModuleInteriorLightItem(item) {
+  if (moduleInteriorLightState.currentItem === item) {
+    moduleInteriorLightState.light.visible = Boolean(item);
+    return;
+  }
+
+  moduleInteriorLightState.currentItem = item;
+  moduleInteriorLightState.light.visible = Boolean(item);
 }
